@@ -3,18 +3,14 @@ import { Edit2, Plus, Trash2, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
 import { Vehicle, VehicleCategory } from '../../types/crm';
 import { formatCurrency } from '../../utils/formatters';
+import {
+  getVehicleClassification,
+  LUXURY_VEHICLE_CATEGORIES,
+  NON_LUXURY_VEHICLE_CATEGORIES,
+  VEHICLE_CATEGORY_DEFAULTS,
+} from '../../utils/vehicles';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
-
-const VEHICLE_CATEGORIES: VehicleCategory[] = [
-  'Hatchback',
-  'Sedan',
-  'SUV',
-  'Innova',
-  'Crysta',
-  'Tempo Traveller',
-  'Luxury Vehicles',
-];
 
 const PAGE_SIZE = 10;
 
@@ -34,10 +30,12 @@ export const VehiclesView: React.FC = () => {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return vehicles.filter((v) => {
-      if (catFilter !== 'All' && v.category !== catFilter) return false;
+      if (catFilter === 'TIER:Non-Luxury' && getVehicleClassification(v.category) !== 'Non-Luxury') return false;
+      if (catFilter === 'TIER:Luxury' && getVehicleClassification(v.category) !== 'Luxury') return false;
+      if (catFilter !== 'All' && !catFilter.startsWith('TIER:') && v.category !== catFilter) return false;
       if (availFilter !== 'All' && v.availability !== availFilter) return false;
       if (term) {
-        const hay = `${v.registrationNumber} ${v.model} ${v.driverName || ''} ${v.vendorDetails || ''}`.toLowerCase();
+        const hay = `${v.registrationNumber} ${v.category} ${v.model} ${v.driverName || ''} ${v.vendorDetails || ''}`.toLowerCase();
         if (!hay.includes(term)) return false;
       }
       return true;
@@ -51,21 +49,49 @@ export const VehiclesView: React.FC = () => {
 
   const openCreate = () => {
     setEditing(null);
+    const initialCat: VehicleCategory = 'Crysta';
+    const def = VEHICLE_CATEGORY_DEFAULTS[initialCat];
     setForm({
       registrationNumber: '',
-      category: 'Crysta',
+      category: initialCat,
       model: '',
-      seatingCapacity: 6,
+      seatingCapacity: def.seatingCapacity,
       driverName: '',
       driverPhone: '',
       vendorDetails: '',
-      perDayRate: 4000,
-      perKmRate: 20,
+      perDayRate: def.perDayRate,
+      perKmRate: def.perKmRate,
       availability: 'Available',
       assignedBookingCode: '',
       maintenanceStatus: 'Good',
     });
     setFormOpen(true);
+  };
+
+  const handleCategoryChange = (nextCategory: VehicleCategory) => {
+    if (editing) {
+      setForm({ ...form, category: nextCategory });
+      return;
+    }
+    const nextDef = VEHICLE_CATEGORY_DEFAULTS[nextCategory];
+    const prevDef = form.category ? VEHICLE_CATEGORY_DEFAULTS[form.category] : undefined;
+    const isDefaultModel =
+      !form.model?.trim() || (prevDef && form.model.trim() === prevDef.suggestedModel);
+    const isDefaultSeats =
+      form.seatingCapacity === undefined || (prevDef && form.seatingCapacity === prevDef.seatingCapacity);
+    const isDefaultDayRate =
+      form.perDayRate === undefined || (prevDef && form.perDayRate === prevDef.perDayRate);
+    const isDefaultKmRate =
+      form.perKmRate === undefined || (prevDef && form.perKmRate === prevDef.perKmRate);
+
+    setForm({
+      ...form,
+      category: nextCategory,
+      model: isDefaultModel ? nextDef.suggestedModel : form.model,
+      seatingCapacity: isDefaultSeats ? nextDef.seatingCapacity : form.seatingCapacity,
+      perDayRate: isDefaultDayRate ? nextDef.perDayRate : form.perDayRate,
+      perKmRate: isDefaultKmRate ? nextDef.perKmRate : form.perKmRate,
+    });
   };
 
   const handleSave = async (ev: React.FormEvent) => {
@@ -97,9 +123,18 @@ export const VehiclesView: React.FC = () => {
             className="px-3 py-2 text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg"
           >
             <option value="All">All Categories</option>
-            {VEHICLE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            <option value="TIER:Non-Luxury">All Non-Luxury Vehicles</option>
+            <option value="TIER:Luxury">All Luxury Vehicles</option>
+            <optgroup label="Non-Luxury Vehicle">
+              {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Luxury Vehicle">
+              {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </optgroup>
           </select>
           <select
             value={availFilter}
@@ -160,8 +195,19 @@ export const VehiclesView: React.FC = () => {
                       <div className="text-xs text-slate-500">{v.model}</div>
                     </td>
                     <td className="py-3 px-4 text-xs">
-                      <div>{v.category}</div>
-                      <div className="text-slate-400 tabular-nums">{v.seatingCapacity} Seats</div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-medium text-slate-900 dark:text-slate-100">{v.category}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            getVehicleClassification(v.category) === 'Luxury'
+                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                          }`}
+                        >
+                          {getVehicleClassification(v.category)}
+                        </span>
+                      </div>
+                      <div className="text-slate-400 tabular-nums mt-0.5">{v.seatingCapacity} Seats</div>
                     </td>
                     <td className="py-3 px-4 text-xs">
                       <div className="font-medium text-slate-900 dark:text-slate-100">{v.driverName || '—'}</div>
@@ -265,13 +311,23 @@ export const VehiclesView: React.FC = () => {
                   <label className="block text-xs font-medium mb-1">Vehicle Category *</label>
                   <select
                     value={form.category || 'Crysta'}
-                    onChange={(e) => setForm({ ...form, category: e.target.value as VehicleCategory })}
+                    onChange={(e) => handleCategoryChange(e.target.value as VehicleCategory)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   >
-                    {VEHICLE_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    <optgroup label="Non-Luxury Vehicle">
+                      {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Luxury Vehicle">
+                      {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
                   </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Classification: <span className="font-medium text-slate-700 dark:text-slate-300">{getVehicleClassification(form.category || 'Crysta')} Vehicle</span>
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">Vehicle Model *</label>
@@ -280,6 +336,7 @@ export const VehiclesView: React.FC = () => {
                     type="text"
                     value={form.model || ''}
                     onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder={VEHICLE_CATEGORY_DEFAULTS[(form.category || 'Crysta') as VehicleCategory]?.suggestedModel || 'e.g. Tata Sumo Gold'}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   />
                 </div>

@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { Booking, CompanySettings, Payment, Quotation } from '../types/crm';
+import { Booking, CompanySettings, Invoice, Payment, Quotation } from '../types/crm';
 import { formatCurrencyExact, formatDate } from './formatters';
 
 let cachedFontsPromise: Promise<{ regular: string; bold: string } | null> | null = null;
@@ -70,7 +70,7 @@ async function loadImageAsDataUrl(url: string): Promise<string | null> {
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.drawImage(img, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.85);
+    return canvas.toDataURL('image/png');
   } catch {
     return null;
   }
@@ -83,8 +83,8 @@ async function addCompanyHeader(
   documentTitle: string,
   documentCode: string
 ) {
-  const companyName = settings?.companyName || 'Azure Travel';
-  const logoUrl = settings?.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg';
+  const companyName = settings?.companyName || 'Little Monk Travels';
+  const logoUrl = settings?.logoUrl || '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png';
 
   // Navy top bar
   doc.setFillColor(15, 39, 68);
@@ -95,9 +95,10 @@ async function addCompanyHeader(
   const logoData = await loadImageAsDataUrl(logoUrl);
   let textX = 14;
   if (logoData) {
-    doc.setFillColor(255, 255, 255);
+    doc.setFillColor(0, 0, 0);
     doc.roundedRect(14, 5, 24, 24, 2, 2, 'F');
-    doc.addImage(logoData, 'JPEG', 15, 6, 22, 22);
+    const imgFormat = logoData.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+    doc.addImage(logoData, imgFormat, 15, 6, 22, 22);
     textX = 43;
   }
 
@@ -370,12 +371,175 @@ export async function generatePaymentReceiptPDF(
   doc.setFont(fontName, 'normal');
   doc.setFontSize(9);
   doc.setTextColor(71, 85, 105);
-  doc.text('This is a computer-generated INR receipt issued by ' + (settings?.companyName || 'Azure Travel') + '.', 14, y);
+  doc.text('This is a computer-generated INR receipt issued by ' + (settings?.companyName || 'Little Monk Travels') + '.', 14, y);
   if (settings?.bankDetails) {
     doc.text(doc.splitTextToSize('Bank Details: ' + settings.bankDetails, 182), 14, y + 7);
   }
 
   doc.save(`${p.receiptCode}_Receipt.pdf`);
+}
+
+export async function generateInvoicePDF(inv: Invoice, settings: CompanySettings | null) {
+  const doc = new jsPDF();
+  const fontName = await registerPdfFont(doc);
+  const hasRupee = fontName === 'NotoSans';
+
+  const docTitle = inv.invoiceType === 'Proforma Invoice' ? 'PROFORMA INVOICE' : 'TAX INVOICE';
+  await addCompanyHeader(doc, fontName, settings, docTitle, inv.invoiceCode);
+
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(10);
+  doc.setFont(fontName, 'bold');
+  doc.text('Bill To:', 14, 46);
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(9.5);
+  doc.text(inv.customerName, 14, 52);
+  let leftY = 57;
+  if (inv.customerPhone) {
+    doc.text(`Phone: ${inv.customerPhone}`, 14, leftY);
+    leftY += 5;
+  }
+  if (inv.customerEmail) {
+    doc.text(`Email: ${inv.customerEmail}`, 14, leftY);
+    leftY += 5;
+  }
+  if (inv.customerAddress) {
+    const addrLines = doc.splitTextToSize(inv.customerAddress, 85);
+    doc.text(addrLines, 14, leftY);
+    leftY += addrLines.length * 4.5;
+  }
+  if (inv.customerGstin) {
+    doc.text(`Customer GSTIN: ${inv.customerGstin}`, 14, leftY);
+    leftY += 5;
+  }
+
+  doc.setFontSize(10);
+  doc.setFont(fontName, 'bold');
+  doc.text('Invoice Details:', 115, 46);
+  doc.setFont(fontName, 'normal');
+  doc.setFontSize(9.5);
+  doc.text(`Invoice Number: ${inv.invoiceCode}`, 115, 52);
+  doc.text(`Issue Date: ${formatDate(inv.issueDate)}`, 115, 57);
+  if (inv.dueDate) doc.text(`Due Date: ${formatDate(inv.dueDate)}`, 115, 62);
+  if (inv.bookingCode) doc.text(`Booking Ref: ${inv.bookingCode}`, 115, inv.dueDate ? 67 : 62);
+  const metaNextY = (inv.dueDate ? 67 : 62) + (inv.bookingCode ? 5 : 0);
+  if (inv.destination) doc.text(`Destination: ${inv.destination}`, 115, metaNextY);
+  if (inv.travelDates) doc.text(`Travel Dates: ${inv.travelDates}`, 115, metaNextY + (inv.destination ? 5 : 0));
+  doc.text(
+    `Status: ${inv.status}  |  Currency: INR`,
+    115,
+    metaNextY + (inv.destination ? 5 : 0) + (inv.travelDates ? 5 : 0)
+  );
+
+  const tableStartY = Math.max(leftY + 6, 86);
+
+  autoTable(doc, {
+    startY: tableStartY,
+    head: [['#', 'Description', 'HSN/SAC', 'Qty', 'Unit Rate (INR)', 'Amount (INR)']],
+    body: (inv.items || []).map((item, idx) => [
+      String(idx + 1),
+      item.description,
+      item.hsnSac || '998551',
+      String(item.quantity),
+      pdfCurrency(item.unitPrice, hasRupee),
+      pdfCurrency(item.amount, hasRupee),
+    ]),
+    styles: { font: fontName },
+    headStyles: { fillColor: [15, 39, 68], textColor: 255, fontSize: 8.5, font: fontName, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8.5, font: fontName },
+    columnStyles: {
+      0: { cellWidth: 10 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 14, halign: 'right' },
+      4: { cellWidth: 34, halign: 'right' },
+      5: { cellWidth: 34, halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  let y = (doc as any).lastAutoTable.finalY + 6;
+
+  const summaryRows: string[][] = [
+    ['Taxable Subtotal', pdfCurrency(inv.subtotal, hasRupee)],
+  ];
+  if (Number(inv.discountAmount || 0) > 0) {
+    summaryRows.push(['Discount', `- ${pdfCurrency(inv.discountAmount, hasRupee)}`]);
+  }
+  summaryRows.push([`GST (${inv.gstPercent}%)`, pdfCurrency(inv.gstAmount, hasRupee)]);
+  summaryRows.push(['INVOICE TOTAL (INR)', pdfCurrency(inv.totalAmount, hasRupee)]);
+  summaryRows.push(['Amount Received', pdfCurrency(inv.paidAmount, hasRupee)]);
+  summaryRows.push(['BALANCE DUE (INR)', pdfCurrency(inv.balanceDue, hasRupee)]);
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Summary', 'Amount (INR)']],
+    body: summaryRows,
+    styles: { font: fontName },
+    headStyles: { fillColor: [13, 148, 136], textColor: 255, fontSize: 9, font: fontName, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 9, font: fontName },
+    columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+    margin: { left: 105, right: 14 },
+  });
+
+  y = (doc as any).lastAutoTable.finalY + 10;
+
+  if (y > 245) {
+    doc.addPage();
+    y = 20;
+  }
+
+  if (settings?.bankDetails || settings?.upiId) {
+    doc.setFont(fontName, 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 39, 68);
+    doc.text('Payment & Bank Details:', 14, y);
+    y += 5;
+    doc.setFont(fontName, 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const payLines = [
+      settings?.bankDetails ? `Bank: ${settings.bankDetails}` : '',
+      settings?.upiId ? `UPI ID: ${settings.upiId}` : '',
+    ]
+      .filter(Boolean)
+      .join('  |  ');
+    const wrappedPay = doc.splitTextToSize(payLines, 182);
+    doc.text(wrappedPay, 14, y);
+    y += wrappedPay.length * 4.2 + 5;
+  }
+
+  if (inv.notes) {
+    doc.setFont(fontName, 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 39, 68);
+    doc.text('Notes:', 14, y);
+    y += 5;
+    doc.setFont(fontName, 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const noteLines = doc.splitTextToSize(inv.notes, 182);
+    doc.text(noteLines, 14, y);
+    y += noteLines.length * 4.2 + 5;
+  }
+
+  const termsText = inv.termsAndConditions || settings?.invoiceTerms;
+  if (termsText) {
+    if (y > 260) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFont(fontName, 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 39, 68);
+    doc.text('Terms & Conditions:', 14, y);
+    y += 5;
+    doc.setFont(fontName, 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(doc.splitTextToSize(termsText, 182), 14, y);
+  }
+
+  doc.save(`${inv.invoiceCode}_Invoice.pdf`);
 }
 
 export function exportToCSV(filename: string, headers: string[], rows: (string | number)[][]) {

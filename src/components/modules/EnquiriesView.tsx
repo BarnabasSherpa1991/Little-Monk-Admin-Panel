@@ -22,6 +22,7 @@ import {
   EnquiryStatus,
   HotelCategory,
   HotelRegion,
+  VehicleCategory,
 } from '../../types/crm';
 import {
   buildWhatsAppLink,
@@ -37,6 +38,13 @@ import {
   getDestinationScopedHotels,
   inferRegionsFromDestination,
 } from '../../utils/destinations';
+import {
+  ALL_VEHICLE_CATEGORIES,
+  getVehicleClassification,
+  LUXURY_VEHICLE_CATEGORIES,
+  NON_LUXURY_VEHICLE_CATEGORIES,
+  VEHICLE_CATEGORY_DEFAULTS,
+} from '../../utils/vehicles';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
@@ -311,7 +319,17 @@ export const EnquiriesView: React.FC = () => {
         convertSelectedHotels.map((h) => h.hotelName).filter(Boolean).join(', ') ||
         hot?.name ||
         '';
-      const veh = vehicles.find((v) => v.id === convertForm.vehicleId);
+      const veh = convertForm.vehicleId.startsWith('cat:')
+        ? undefined
+        : vehicles.find((v) => v.id === convertForm.vehicleId);
+      const selectedCatLabel = convertForm.vehicleId.startsWith('cat:')
+        ? (() => {
+            const cat = convertForm.vehicleId.replace('cat:', '') as VehicleCategory;
+            const tier = getVehicleClassification(cat);
+            const def = VEHICLE_CATEGORY_DEFAULTS[cat];
+            return `[Category] ${cat} · ${def?.suggestedModel || cat} (${tier})`;
+          })()
+        : '';
       const ops = employees.find((em) => em.uid === convertForm.operationsManagerUid);
       await convertEnquiryToBooking(convertTarget, {
         packageId: pkg?.id || '',
@@ -320,7 +338,9 @@ export const EnquiriesView: React.FC = () => {
         hotelName: combinedHotelName,
         selectedHotels: convertSelectedHotels,
         vehicleId: veh?.id || '',
-        vehicleDetails: veh ? `${veh.model} (${veh.registrationNumber})` : convertTarget.preferredVehicle || '',
+        vehicleDetails: veh
+          ? `${veh.category} · ${veh.model} (${veh.registrationNumber})`
+          : selectedCatLabel || convertTarget.preferredVehicle || '',
         bookingAmount: Number(convertForm.bookingAmount || 0),
         advanceReceived: Number(convertForm.advanceReceived || 0),
         operationsManagerUid: ops?.uid || currentEmployee?.uid,
@@ -535,7 +555,7 @@ export const EnquiriesView: React.FC = () => {
                           <a
                             href={buildWhatsAppLink(
                               e.whatsapp || e.mobile,
-                              `Hello ${e.customerName}, regarding your ${e.destination} enquiry (${e.enquiryCode}) with Azure Travel.`
+                              `Hello ${e.customerName}, regarding your ${e.destination} enquiry (${e.enquiryCode}) with Little Monk Travels.`
                             )}
                             target="_blank"
                             rel="noreferrer"
@@ -772,13 +792,27 @@ export const EnquiriesView: React.FC = () => {
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
                     Preferred Vehicle
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={form.preferredVehicle || ''}
                     onChange={(e) => setForm({ ...form, preferredVehicle: e.target.value })}
-                    placeholder="e.g. Innova Crysta"
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
-                  />
+                  >
+                    <option value="">Select Preferred Vehicle...</option>
+                    <optgroup label="Non-Luxury Vehicle">
+                      {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Luxury Vehicle">
+                      {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    {form.preferredVehicle &&
+                      !ALL_VEHICLE_CATEGORIES.includes(form.preferredVehicle as VehicleCategory) && (
+                        <option value={form.preferredVehicle}>{form.preferredVehicle}</option>
+                      )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
@@ -1129,12 +1163,43 @@ export const EnquiriesView: React.FC = () => {
                   onChange={(e) => setConvertForm({ ...convertForm, vehicleId: e.target.value })}
                   className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                 >
-                  <option value="">Select Vehicle</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.model} ({v.registrationNumber})
-                    </option>
-                  ))}
+                  <option value="">
+                    {convertTarget.preferredVehicle
+                      ? `Use Preferred (${convertTarget.preferredVehicle}) / Unassigned`
+                      : 'Select Vehicle or Category'}
+                  </option>
+                  <optgroup label="Non-Luxury Vehicle Fleet">
+                    {vehicles
+                      .filter((v) => getVehicleClassification(v.category) === 'Non-Luxury')
+                      .map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.category} · {v.model} ({v.registrationNumber})
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Luxury Vehicle Fleet">
+                    {vehicles
+                      .filter((v) => getVehicleClassification(v.category) === 'Luxury')
+                      .map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.category} · {v.model} ({v.registrationNumber})
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Non-Luxury Vehicle Category">
+                    {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                      <option key={`cat-${c}`} value={`cat:${c}`}>
+                        {c} (Non-Luxury)
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Luxury Vehicle Category">
+                    {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                      <option key={`cat-${c}`} value={`cat:${c}`}>
+                        {c} (Luxury)
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">

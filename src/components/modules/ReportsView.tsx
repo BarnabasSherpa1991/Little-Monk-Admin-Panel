@@ -699,7 +699,7 @@ export const ReportsView: React.FC = () => {
               type="button"
               onClick={() =>
                 exportToCSV(
-                  `AzureTravel_${reportType}`,
+                  `LittleMonkTravels_${reportType}`,
                   reportData.headers,
                   reportData.rawRows
                 )
@@ -713,7 +713,7 @@ export const ReportsView: React.FC = () => {
               type="button"
               onClick={() =>
                 exportToExcel(
-                  `AzureTravel_${reportType}`,
+                  `LittleMonkTravels_${reportType}`,
                   reportData.title,
                   reportData.headers,
                   reportData.rawRows
@@ -728,7 +728,7 @@ export const ReportsView: React.FC = () => {
               type="button"
               onClick={() =>
                 exportReportPDF(
-                  `AzureTravel_${reportType}`,
+                  `LittleMonkTravels_${reportType}`,
                   reportData.title,
                   reportData.subtitle,
                   reportData.headers,

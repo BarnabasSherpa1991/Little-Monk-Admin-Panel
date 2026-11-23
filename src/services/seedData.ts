@@ -10,25 +10,25 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
 
   // 1. Company Settings (preserve if already configured by checking first)
   const existingSettingsSnap = await getDocs(collection(db, 'settings'));
-  const hasCompanySettings = existingSettingsSnap.docs.some((d) => d.id === 'company');
-  if (!hasCompanySettings) {
+  const existingCompanyDoc = existingSettingsSnap.docs.find((d) => d.id === 'company');
+  if (!existingCompanyDoc) {
     coreBatch.set(doc(db, 'settings', 'company'), {
-      companyName: 'Azure Travel',
+      companyName: 'Little Monk Travels',
       tagline: 'Eastern Himalayas & Bhutan Specialists',
-      logoUrl: '/src/assets/images/company_logo_mark_1795419417417.jpg',
+      logoUrl: '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png',
       currency: 'INR',
       currencySymbol: '₹',
       gstNumber: '19AABCA9482K1Z5',
       defaultGstPercent: 5,
-      email: 'concierge@azuretravel.in',
+      email: 'concierge@littlemonktravels.in',
       phone: '+91 98204 51200',
-      website: 'https://azuretravel.in',
+      website: 'https://littlemonktravels.in',
       address: '2nd Floor, Hill Cart Road, Siliguri, West Bengal 734001',
       invoicePrefix: 'INV',
       quotePrefix: 'QT',
       bookingPrefix: 'BK',
       bankDetails: 'HDFC Bank Ltd · A/C: 50200048192011 · IFSC: HDFC0000142 · Siliguri Branch',
-      upiId: 'azuretravel@hdfcbank',
+      upiId: 'littlemonktravels@hdfcbank',
       quotationTerms:
         '1. Quotation validity is 7 days from issue date.\n2. Hotel rooms and permits (Nathula, North Sikkim, Bhutan SDF) are subject to availability and government regulations.\n3. 40% advance required to lock confirmed bookings; balance due 14 days prior to departure.\n4. Cancellation charges apply as per hotel and transport partner policies.',
       invoiceTerms:
@@ -50,10 +50,32 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
       updatedAt: now,
     });
   } else {
-    // Ensure INR default currency fields are synced non-destructively
+    const existingData = existingCompanyDoc.data();
+    const isLegacyBrand = /azur[ae]\s*travel/i.test(String(existingData.companyName || ''));
+    const isLegacyLogo =
+      !existingData.logoUrl ||
+      String(existingData.logoUrl).includes('company_logo_mark') ||
+      String(existingData.logoUrl) === '/assets/images/little_monk_logo.jpg';
     await setDoc(
       doc(db, 'settings', 'company'),
-      { currency: 'INR', currencySymbol: '₹', updatedAt: now },
+      {
+        currency: 'INR',
+        currencySymbol: '₹',
+        ...(isLegacyBrand ? { companyName: 'Little Monk Travels' } : {}),
+        ...(isLegacyLogo
+          ? { logoUrl: '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png' }
+          : {}),
+        ...(existingData.email === 'concierge@azuretravel.in'
+          ? { email: 'concierge@littlemonktravels.in' }
+          : {}),
+        ...(existingData.website === 'https://azuretravel.in'
+          ? { website: 'https://littlemonktravels.in' }
+          : {}),
+        ...(existingData.upiId === 'azuretravel@hdfcbank'
+          ? { upiId: 'littlemonktravels@hdfcbank' }
+          : {}),
+        updatedAt: now,
+      },
       { merge: true }
     );
   }
@@ -87,6 +109,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     existingCustomersSnap,
     existingEnquiriesSnap,
     existingBookingsSnap,
+    existingInvoicesSnap,
   ] = await Promise.all([
     getDocs(collection(db, 'hotels')),
     getDocs(collection(db, 'whatsapp_templates')),
@@ -95,6 +118,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     getDocs(collection(db, 'customers')),
     getDocs(collection(db, 'enquiries')),
     getDocs(collection(db, 'bookings')),
+    getDocs(collection(db, 'invoices')),
   ]);
 
   const existingHotelNames = new Set(
@@ -110,7 +134,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
         id: 'tpl_enquiry_resp',
         name: 'Initial Enquiry Greeting',
         category: 'Enquiry Response',
-        body: 'Hello {{customerName}}, thank you for contacting Azure Travel regarding your {{destination}} trip ({{startDate}}). Our Himalayan travel specialist {{executiveName}} is preparing customized options for you. Let us know a convenient time for a quick call.',
+        body: 'Hello {{customerName}}, thank you for contacting Little Monk Travels regarding your {{destination}} trip ({{startDate}}). Our Himalayan travel specialist {{executiveName}} is preparing customized options for you. Let us know a convenient time for a quick call.',
       },
       {
         id: 'tpl_followup',
@@ -134,13 +158,13 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
         id: 'tpl_payment_rem',
         name: 'Balance Payment Reminder',
         category: 'Payment Reminder',
-        body: 'Dear {{customerName}}, this is a gentle reminder for the remaining balance of {{remainingAmount}} on booking {{bookingCode}} ({{destination}}). UPI: azuretravel@hdfcbank.',
+        body: 'Dear {{customerName}}, this is a gentle reminder for the remaining balance of {{remainingAmount}} on booking {{bookingCode}} ({{destination}}). UPI: littlemonktravels@hdfcbank.',
       },
       {
         id: 'tpl_tour_rem',
         name: 'Pre-Departure Checklist',
         category: 'Tour Reminder',
-        body: 'Warm greetings from Azure Travel! Your {{destination}} departure ({{startDate}}) is approaching. Please carry original photo IDs/passports for permit clearance. Driver details will be shared 24 hours before pickup.',
+        body: 'Warm greetings from Little Monk Travels! Your {{destination}} departure ({{startDate}}) is approaching. Please carry original photo IDs/passports for permit clearance. Driver details will be shared 24 hours before pickup.',
       },
     ];
     templates.forEach(({ id, ...tplData }) => {
@@ -340,7 +364,57 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     }
   });
 
-  // If business records already exist (reseed triggered later), only add missing demo hotels & stop cleanly without duplicating enquiries/bookings/customers
+  // 3b. Ensure Non-Luxury Sumo & Mahindra Bolero Maxx fleet options exist (non-destructive if absent)
+  const existingVehicleRegs = new Set(
+    existingVehiclesSnap.docs.map((d) => String(d.data().registrationNumber || '').trim().toUpperCase())
+  );
+  const existingVehicleCats = new Set(
+    existingVehiclesSnap.docs.map((d) => String(d.data().category || '').trim())
+  );
+
+  const nonLuxuryHillVehicles = [
+    {
+      registrationNumber: 'SK-01-TR-2204',
+      category: 'Sumo',
+      model: 'Tata Sumo Gold (Hill Permit)',
+      seatingCapacity: 9,
+      driverName: 'Dawa Lepcha',
+      driverPhone: '+91 98324 61205',
+      vendorDetails: 'Little Monk Himalayan Fleet',
+      perDayRate: 3200,
+      perKmRate: 18,
+      availability: 'Available',
+      assignedBookingCode: '',
+      maintenanceStatus: 'Good',
+    },
+    {
+      registrationNumber: 'WB-73-M-5518',
+      category: 'Mahindra Bolero Maxx',
+      model: 'Mahindra Bolero Maxx (Mountain Utility)',
+      seatingCapacity: 9,
+      driverName: 'Suresh Rai',
+      driverPhone: '+91 97331 44980',
+      vendorDetails: 'Siliguri Darjeeling Cab Union',
+      perDayRate: 3000,
+      perKmRate: 17,
+      availability: 'Available',
+      assignedBookingCode: '',
+      maintenanceStatus: 'Good',
+    },
+  ];
+
+  nonLuxuryHillVehicles.forEach((v) => {
+    if (!existingVehicleRegs.has(v.registrationNumber) && !existingVehicleCats.has(v.category)) {
+      batch.set(doc(collection(db, 'vehicles')), {
+        ...v,
+        createdByUid: uid,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  });
+
+  // If business records already exist (reseed triggered later), only add missing demo hotels/non-luxury fleet & stop cleanly without duplicating enquiries/bookings/customers
   const hasExistingBusinessRecords =
     !existingPackagesSnap.empty ||
     !existingCustomersSnap.empty ||
@@ -365,7 +439,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
       seatingCapacity: 6,
       driverName: 'Passang Bhutia',
       driverPhone: '+91 98320 40291',
-      vendorDetails: 'Azure Himalayan Fleet',
+      vendorDetails: 'Little Monk Himalayan Fleet',
       perDayRate: 4800,
       perKmRate: 24,
       availability: 'On Trip',
@@ -1107,6 +1181,48 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     recordedByUid: uid,
     createdAt: now,
   });
+
+  if (existingInvoicesSnap.empty) {
+    const inv1Ref = doc(collection(db, 'invoices'));
+    batch2.set(inv1Ref, {
+      invoiceCode: 'INV-2026-001',
+      invoiceType: 'Tax Invoice',
+      bookingId: bk1Ref.id,
+      bookingCode: 'BK-2026-001',
+      customerId: cust1Ref.id,
+      customerName: 'Aarav & Priya Malhotra',
+      customerPhone: '+91 98201 33412',
+      customerEmail: 'aarav.malhotra@example.com',
+      customerAddress: 'Mumbai, Maharashtra',
+      destination: 'Gangtok & Pelling, Sikkim',
+      travelDates: '15 Dec 2026 – 20 Dec 2026',
+      issueDate: '2026-11-12',
+      dueDate: '2026-12-01',
+      items: [
+        {
+          description: 'Sikkim Himalayan Serenity — Gangtok & Pelling Tour Package (2 Adults)',
+          hsnSac: '998551',
+          quantity: 1,
+          unitPrice: 114286,
+          amount: 114286,
+        },
+      ],
+      subtotal: 114286,
+      discountAmount: 0,
+      gstPercent: 5,
+      gstAmount: 5714,
+      totalAmount: 120000,
+      paidAmount: 75000,
+      balanceDue: 45000,
+      status: 'Partial',
+      notes: 'Advance deposit of ₹75,000 received via NEFT. Balance payable prior to departure.',
+      termsAndConditions:
+        '1. Carry original Voter ID / Passport (mandatory for Sikkim Protected Area Permits & Bhutan immigration).\n2. Standard check-in 14:00 hrs and check-out 11:00 hrs unless specified.',
+      createdByUid: uid,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
 
   await batch2.commit();
 }

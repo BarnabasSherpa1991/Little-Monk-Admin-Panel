@@ -30,16 +30,16 @@ export const LoginScreen: React.FC = () => {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
       <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-8">
         <div className="flex items-center gap-3.5 mb-6">
-          <div className="w-12 h-12 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-white">
+          <div className="w-14 h-14 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-black p-0.5">
             <ImageWithFallback
-              src="/src/assets/images/company_logo_mark_1795419417417.jpg"
-              alt="Azure Travel Logo"
-              className="w-full h-full object-cover"
+              src="/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png"
+              alt="Little Monk Travels Logo"
+              className="w-full h-full object-contain"
             />
           </div>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-              Azure Travel CRM
+              Little Monk Travels CRM
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Operations, Sales & Accounts Workspace

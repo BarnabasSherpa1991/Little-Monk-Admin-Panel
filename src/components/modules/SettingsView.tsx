@@ -39,9 +39,9 @@ export const SettingsView: React.FC = () => {
     currentEmployee?.role === 'Super Admin' || currentEmployee?.role === 'Admin';
 
   const [form, setForm] = useState<CompanySettings>({
-    companyName: 'Azure Travel',
+    companyName: 'Little Monk Travels',
     tagline: 'Eastern Himalayas & Bhutan Specialists',
-    logoUrl: '/src/assets/images/company_logo_mark_1795419417417.jpg',
+    logoUrl: '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png',
     currency: 'INR',
     currencySymbol: '₹',
     gstNumber: '',
@@ -73,10 +73,10 @@ export const SettingsView: React.FC = () => {
   useEffect(() => {
     if (settings) {
       setForm({
-        companyName: settings.companyName || 'Azure Travel',
+        companyName: settings.companyName || 'Little Monk Travels',
         tagline: settings.tagline || '',
         logoUrl:
-          settings.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg',
+          settings.logoUrl || '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png',
         currency: 'INR',
         currencySymbol: '₹',
         gstNumber: settings.gstNumber || '',
@@ -154,7 +154,7 @@ export const SettingsView: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `AzureTravel_CRM_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `LittleMonkTravels_CRM_Backup_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast('success', 'Full CRM JSON backup downloaded.');
@@ -180,11 +180,11 @@ export const SettingsView: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-white shrink-0">
+            <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-black p-0.5 shrink-0">
               <ImageWithFallback
-                src={form.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg'}
+                src={form.logoUrl || '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png'}
                 alt="Company Logo"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
               />
             </div>
             <div className="flex-1">

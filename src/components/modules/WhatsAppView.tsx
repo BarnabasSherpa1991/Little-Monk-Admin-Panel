@@ -96,7 +96,7 @@ export const WhatsAppView: React.FC = () => {
 
   const activeVars = useMemo(() => {
     const base: Record<string, string | number | undefined> = {
-      companyName: settings?.companyName || 'Azure Travel',
+      companyName: settings?.companyName || 'Little Monk Travels',
       customerName: customerName || 'Traveller',
       executiveName: currentEmployee?.name || 'Travel Desk',
     };
@@ -197,7 +197,7 @@ export const WhatsAppView: React.FC = () => {
     if (tpl) {
       // Compute inline vars using updated entity
       const vars: Record<string, string | number | undefined> = {
-        companyName: settings?.companyName || 'Azure Travel',
+        companyName: settings?.companyName || 'Little Monk Travels',
         customerName: nextName || 'Traveller',
         executiveName: currentEmployee?.name || 'Travel Desk',
       };
@@ -675,7 +675,7 @@ export const WhatsAppView: React.FC = () => {
                   disabled={!isAdmin}
                   value={apiForm.webhookVerifyToken}
                   onChange={(e) => setApiForm({ ...apiForm, webhookVerifyToken: e.target.value })}
-                  placeholder="azure_travel_verify_token"
+                  placeholder="little_monk_travels_verify_token"
                   className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 font-mono"
                 />
               </div>

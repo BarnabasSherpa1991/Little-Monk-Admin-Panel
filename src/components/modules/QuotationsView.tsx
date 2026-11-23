@@ -18,6 +18,7 @@ import {
   QuotationHotelItem,
   QuotationStatus,
   QuotationTransportItem,
+  VehicleCategory,
 } from '../../types/crm';
 import { buildWhatsAppLink, formatCurrency, formatDate } from '../../utils/formatters';
 import {
@@ -25,6 +26,13 @@ import {
   HOTEL_REGIONS,
   inferRegionsFromDestination,
 } from '../../utils/destinations';
+import {
+  ALL_VEHICLE_CATEGORIES,
+  getVehicleClassification,
+  LUXURY_VEHICLE_CATEGORIES,
+  NON_LUXURY_VEHICLE_CATEGORIES,
+  VEHICLE_CATEGORY_DEFAULTS,
+} from '../../utils/vehicles';
 import { generateQuotationPDF } from '../../utils/pdfAndExport';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ImageWithFallback } from '../common/ImageWithFallback';
@@ -227,15 +235,18 @@ export const QuotationsView: React.FC = () => {
     ]);
   };
 
-  const addTransportRow = (vehicleId?: string) => {
-    const v = vehicles.find((x) => x.id === vehicleId);
-    const rate = v ? v.perDayRate : 3800;
+  const addTransportRow = (vehicleId?: string, presetCategory?: VehicleCategory) => {
+    const v = vehicleId ? vehicles.find((x) => x.id === vehicleId) : undefined;
+    const cat = v?.category || presetCategory || 'Sedan';
+    const def = VEHICLE_CATEGORY_DEFAULTS[cat];
+    const rate = v ? v.perDayRate : def?.perDayRate || 3800;
+    const model = v?.model || def?.suggestedModel || 'Private Sedan';
     setTransportItems([
       ...transportItems,
       {
         vehicleId: v?.id || '',
-        vehicleCategory: v?.category || 'Sedan',
-        vehicleModel: v?.model || 'Private Sedan',
+        vehicleCategory: cat,
+        vehicleModel: model,
         days: 4,
         ratePerDay: rate,
         total: rate * 4,
@@ -780,7 +791,7 @@ export const QuotationsView: React.FC = () => {
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                   <span className="text-xs font-semibold">Transportation Line Items</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <select
                       onChange={(e) => {
                         if (e.target.value) addTransportRow(e.target.value);
@@ -789,11 +800,47 @@ export const QuotationsView: React.FC = () => {
                       className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                     >
                       <option value="">+ Add from Fleet Vehicles...</option>
-                      {vehicles.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.category} · {v.model} ({formatCurrency(v.perDayRate)}/day)
-                        </option>
-                      ))}
+                      <optgroup label="Non-Luxury Vehicle Fleet">
+                        {vehicles
+                          .filter((v) => getVehicleClassification(v.category) === 'Non-Luxury')
+                          .map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.category} · {v.model} ({formatCurrency(v.perDayRate)}/day)
+                            </option>
+                          ))}
+                      </optgroup>
+                      <optgroup label="Luxury Vehicle Fleet">
+                        {vehicles
+                          .filter((v) => getVehicleClassification(v.category) === 'Luxury')
+                          .map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.category} · {v.model} ({formatCurrency(v.perDayRate)}/day)
+                            </option>
+                          ))}
+                      </optgroup>
+                    </select>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) addTransportRow(undefined, e.target.value as VehicleCategory);
+                        e.target.value = '';
+                      }}
+                      className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                    >
+                      <option value="">+ Add by Category...</option>
+                      <optgroup label="Non-Luxury Vehicle">
+                        {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c} ({formatCurrency(VEHICLE_CATEGORY_DEFAULTS[c].perDayRate)}/day)
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Luxury Vehicle">
+                        {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c} ({formatCurrency(VEHICLE_CATEGORY_DEFAULTS[c].perDayRate)}/day)
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                     <button
                       type="button"
@@ -807,17 +854,43 @@ export const QuotationsView: React.FC = () => {
                 <div className="space-y-2">
                   {transportItems.map((item, idx) => (
                     <div key={idx} className="grid grid-cols-2 sm:grid-cols-12 gap-2 p-2.5 border border-slate-200 dark:border-slate-800 rounded-lg text-xs">
-                      <input
-                        type="text"
+                      <select
                         value={item.vehicleCategory}
                         onChange={(e) => {
+                          const nextCat = e.target.value as VehicleCategory;
                           const c = [...transportItems];
-                          c[idx].vehicleCategory = e.target.value;
+                          const prevCat = c[idx].vehicleCategory as VehicleCategory;
+                          const prevDef = VEHICLE_CATEGORY_DEFAULTS[prevCat];
+                          const nextDef = VEHICLE_CATEGORY_DEFAULTS[nextCat];
+                          c[idx].vehicleCategory = nextCat;
+                          if (nextDef) {
+                            if (!c[idx].vehicleModel?.trim() || (prevDef && c[idx].vehicleModel === prevDef.suggestedModel)) {
+                              c[idx].vehicleModel = nextDef.suggestedModel;
+                            }
+                            if (!c[idx].vehicleId && (c[idx].ratePerDay === 3800 || (prevDef && c[idx].ratePerDay === prevDef.perDayRate))) {
+                              c[idx].ratePerDay = nextDef.perDayRate;
+                              c[idx].total = c[idx].days * nextDef.perDayRate;
+                            }
+                          }
                           setTransportItems(c);
                         }}
-                        placeholder="Category"
                         className="sm:col-span-3 px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
-                      />
+                      >
+                        <optgroup label="Non-Luxury Vehicle">
+                          {NON_LUXURY_VEHICLE_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="Luxury Vehicle">
+                          {LUXURY_VEHICLE_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </optgroup>
+                        {item.vehicleCategory &&
+                          !ALL_VEHICLE_CATEGORIES.includes(item.vehicleCategory as VehicleCategory) && (
+                            <option value={item.vehicleCategory}>{item.vehicleCategory}</option>
+                          )}
+                      </select>
                       <input
                         type="text"
                         value={item.vehicleModel}
@@ -1013,15 +1086,15 @@ export const QuotationsView: React.FC = () => {
             {/* Branded Proposal Header */}
             <div className="bg-[#0F2744] text-white px-8 py-6 flex items-center justify-between border-b-4 border-teal-500">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg overflow-hidden bg-white shrink-0">
+                <div className="w-14 h-14 rounded-lg overflow-hidden bg-black shrink-0 p-0.5">
                   <ImageWithFallback
-                    src={settings?.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg'}
+                    src={settings?.logoUrl || '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png'}
                     alt="Company Logo"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                   />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold">{settings?.companyName || 'Azure Travel'}</h2>
+                  <h2 className="text-lg font-bold">{settings?.companyName || 'Little Monk Travels'}</h2>
                   <p className="text-xs text-slate-300">
                     {settings?.phone} · {settings?.email}
                   </p>

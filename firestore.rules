@@ -281,16 +281,17 @@ service cloud.firestore {
 
     function isValidHotel(data) {
       return data.keys().hasAll(['name', 'destination', 'category', 'contractRate', 'createdByUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'country', 'region', 'city', 'destination', 'address', 'contactPerson', 'phone', 'whatsapp', 'email', 'category', 'roomTypes', 'totalRooms', 'mealPlans', 'contractRate', 'seasonalRate', 'peakSeasonRate', 'offSeasonRate', 'checkInTime', 'checkOutTime', 'facilities', 'mapLocationUrl', 'images', 'policies', 'notes', 'availability', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['hotelCode', 'name', 'country', 'region', 'city', 'destination', 'address', 'contactPerson', 'phone', 'whatsapp', 'email', 'category', 'roomTypes', 'totalRooms', 'mealPlans', 'contractRate', 'seasonalRate', 'peakSeasonRate', 'offSeasonRate', 'checkInTime', 'checkOutTime', 'facilities', 'mapLocationUrl', 'images', 'policies', 'notes', 'availability', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
+        && isOptString(data, 'hotelCode', 40)
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 150
         && (!('country' in data) || data.country in ['India', 'Bhutan'])
         && (!('region' in data) || data.region in ['Sikkim', 'Darjeeling', 'Bhutan'])
         && isOptString(data, 'city', 100)
         && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
-        && isOptString(data, 'address', 300)
+        && isOptString(data, 'address', 600)
         && isOptString(data, 'contactPerson', 120)
-        && isOptString(data, 'phone', 30)
-        && isOptString(data, 'whatsapp', 30)
+        && isOptString(data, 'phone', 40)
+        && isOptString(data, 'whatsapp', 40)
         && isOptString(data, 'email', 160)
         && data.category in ['Standard', 'Deluxe', 'Premium', 'Luxury']
         && isStringList(data, 'roomTypes', 15)
@@ -303,7 +304,7 @@ service cloud.firestore {
         && isOptString(data, 'checkInTime', 30)
         && isOptString(data, 'checkOutTime', 30)
         && isStringList(data, 'facilities', 30)
-        && isOptString(data, 'mapLocationUrl', 500)
+        && isOptString(data, 'mapLocationUrl', 2000)
         && isStringList(data, 'images', 10)
         && isOptString(data, 'policies', 2000)
         && isOptString(data, 'notes', 1500)
@@ -328,7 +329,7 @@ service cloud.firestore {
       return data.keys().hasAll(['registrationNumber', 'category', 'model', 'seatingCapacity', 'perDayRate', 'availability', 'maintenanceStatus', 'createdByUid', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly(['registrationNumber', 'category', 'model', 'seatingCapacity', 'driverName', 'driverPhone', 'vendorDetails', 'perDayRate', 'perKmRate', 'availability', 'assignedBookingCode', 'maintenanceStatus', 'createdByUid', 'createdAt', 'updatedAt'])
         && data.registrationNumber is string && data.registrationNumber.size() >= 2 && data.registrationNumber.size() <= 40
-        && data.category in ['Hatchback', 'Sedan', 'SUV', 'Innova', 'Crysta', 'Tempo Traveller', 'Luxury Vehicles']
+        && data.category in ['Hatchback', 'Sedan', 'SUV', 'Innova', 'Crysta', 'Tempo Traveller', 'Sumo', 'Mahindra Bolero Maxx', 'Luxury Vehicles']
         && data.model is string && data.model.size() >= 1 && data.model.size() <= 120
         && isNonNegNumber(data.seatingCapacity)
         && isOptString(data, 'driverName', 120)
@@ -361,6 +362,39 @@ service cloud.firestore {
         && isOptString(data, 'notes', 1000)
         && isValidId(data.recordedByUid)
         && data.createdAt is timestamp;
+    }
+
+    function isValidInvoice(data) {
+      return data.keys().hasAll(['invoiceCode', 'invoiceType', 'customerName', 'issueDate', 'items', 'subtotal', 'gstPercent', 'gstAmount', 'totalAmount', 'paidAmount', 'balanceDue', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['invoiceCode', 'invoiceType', 'bookingId', 'bookingCode', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'customerGstin', 'destination', 'travelDates', 'issueDate', 'dueDate', 'items', 'subtotal', 'discountAmount', 'gstPercent', 'gstAmount', 'totalAmount', 'paidAmount', 'balanceDue', 'status', 'notes', 'termsAndConditions', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.invoiceCode is string && data.invoiceCode.size() >= 3 && data.invoiceCode.size() <= 40
+        && data.invoiceType in ['Tax Invoice', 'Proforma Invoice']
+        && isOptString(data, 'bookingId', 128)
+        && isOptString(data, 'bookingCode', 40)
+        && isOptString(data, 'customerId', 128)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && isOptString(data, 'customerPhone', 30)
+        && isOptString(data, 'customerEmail', 160)
+        && isOptString(data, 'customerAddress', 300)
+        && isOptString(data, 'customerGstin', 40)
+        && isOptString(data, 'destination', 120)
+        && isOptString(data, 'travelDates', 80)
+        && data.issueDate is string && data.issueDate.size() >= 4 && data.issueDate.size() <= 30
+        && isOptString(data, 'dueDate', 30)
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 20 && data.items[0] is map
+        && isNonNegNumber(data.subtotal)
+        && isOptNumber(data, 'discountAmount')
+        && isNonNegNumber(data.gstPercent)
+        && isNonNegNumber(data.gstAmount)
+        && isNonNegNumber(data.totalAmount)
+        && isNonNegNumber(data.paidAmount)
+        && isNonNegNumber(data.balanceDue)
+        && data.status in ['Draft', 'Issued', 'Partial', 'Paid', 'Cancelled']
+        && isOptString(data, 'notes', 1500)
+        && isOptString(data, 'termsAndConditions', 4000)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
     }
 
     function isValidExpense(data) {
@@ -640,12 +674,16 @@ service cloud.firestore {
     match /hotels/{hotelId} {
       allow get: if isValidId(hotelId) && (isAdmin() || isActiveEmployee());
       allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().category in ['Standard', 'Deluxe', 'Premium', 'Luxury']);
-      allow create: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+      allow create: if isValidId(hotelId)
+        && (isManagerOrAdmin() || (isActiveEmployee() && 'hotels' in get(employeeDocPath(request.auth.uid)).data.permissions && get(employeeDocPath(request.auth.uid)).data.permissions.hotels.create == true))
+        && isValidHotel(incoming())
         && isTargetHotelLocation(incoming())
         && incoming().createdByUid == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
-      allow update: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+      allow update: if isValidId(hotelId)
+        && (isManagerOrAdmin() || (isActiveEmployee() && 'hotels' in get(employeeDocPath(request.auth.uid)).data.permissions && get(employeeDocPath(request.auth.uid)).data.permissions.hotels.edit == true))
+        && isValidHotel(incoming())
         && (
           isTargetHotelLocation(incoming())
           || (incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt']) && incoming().isActive == false)
@@ -683,6 +721,29 @@ service cloud.firestore {
         && incoming().recordedByUid == existing().recordedByUid
         && incoming().createdAt == existing().createdAt;
       allow delete: if isValidId(paymentId) && isAdmin();
+    }
+
+    // Invoices
+    match /invoices/{invoiceId} {
+      allow get: if isValidId(invoiceId) && (isManagerOrAdmin() || (isActiveEmployee() && existing().createdByUid == request.auth.uid));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().createdByUid == request.auth.uid);
+      allow create: if isValidId(invoiceId) && (isAdmin() || isActiveEmployee()) && isValidInvoice(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(invoiceId) && isSignedIn() && isValidInvoice(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && !(existing().status in ['Paid', 'Cancelled'])
+            && existing().createdByUid == request.auth.uid
+          )
+        );
+      allow delete: if isValidId(invoiceId) && isAdmin();
     }
 
     // Expenses

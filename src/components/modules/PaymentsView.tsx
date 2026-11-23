@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Download, Edit2, Plus, Trash2, X } from 'lucide-react';
+import { Download, Edit2, Eye, FileText, Plus, Trash2, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
-import { Expense, Payment, PaymentMode } from '../../types/crm';
+import { Expense, Invoice, Payment, PaymentMode } from '../../types/crm';
 import { formatCurrency, formatDate, todayISO } from '../../utils/formatters';
-import { generatePaymentReceiptPDF } from '../../utils/pdfAndExport';
+import { generateInvoicePDF, generatePaymentReceiptPDF } from '../../utils/pdfAndExport';
 import { SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { InvoiceModal } from '../common/InvoiceModal';
 
 const MODES: PaymentMode[] = ['Cash', 'UPI', 'Bank Transfer', 'Credit/Debit Card', 'Payment Gateway'];
 const EXPENSE_CATS: Expense['category'][] = [
@@ -19,17 +20,19 @@ const EXPENSE_CATS: Expense['category'][] = [
 export const PaymentsView: React.FC = () => {
   const {
     payments,
+    invoices,
     expenses,
     bookings,
     settings,
     can,
     recordPayment,
     deletePayment,
+    deleteInvoice,
     saveExpense,
     deleteExpense,
   } = useCRM();
 
-  const [tab, setTab] = useState<'collections' | 'expenses'>('collections');
+  const [tab, setTab] = useState<'collections' | 'invoices' | 'expenses'>('collections');
   const [search, setSearch] = useState('');
 
   const [payModalOpen, setPayModalOpen] = useState(false);
@@ -49,6 +52,12 @@ export const PaymentsView: React.FC = () => {
 
   const [deletePayId, setDeletePayId] = useState<string | null>(null);
   const [deleteExpId, setDeleteExpId] = useState<string | null>(null);
+  const [deleteInvId, setDeleteInvId] = useState<string | null>(null);
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    mode: 'edit' | 'preview';
+    invoice?: Invoice | null;
+  }>({ open: false, mode: 'edit' });
 
   const summary = useMemo(() => {
     const collections = payments
@@ -101,6 +110,16 @@ export const PaymentsView: React.FC = () => {
         .includes(term);
     });
   }, [expenses, search]);
+
+  const filteredInvoices = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return invoices.filter((inv) => {
+      if (!term) return true;
+      return `${inv.invoiceCode} ${inv.customerName} ${inv.bookingCode || ''} ${inv.destination || ''} ${inv.status}`
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [invoices, search]);
 
   const handleSavePayment = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -196,6 +215,17 @@ export const PaymentsView: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => setTab('invoices')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                tab === 'invoices'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              Invoices ({invoices.length})
+            </button>
+            <button
+              type="button"
               onClick={() => setTab('expenses')}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 tab === 'expenses'
@@ -206,7 +236,16 @@ export const PaymentsView: React.FC = () => {
               Supplier Payments & Expenses ({expenses.length})
             </button>
           </div>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search receipts, vendor, booking..." className="w-64" />
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={
+              tab === 'invoices'
+                ? 'Search invoice #, customer, booking...'
+                : 'Search receipts, vendor, booking...'
+            }
+            className="w-64"
+          />
         </div>
 
         {can('payments', 'create') && (
@@ -230,6 +269,15 @@ export const PaymentsView: React.FC = () => {
               >
                 <Plus className="w-4 h-4" />
                 Record Payment / Refund
+              </button>
+            ) : tab === 'invoices' ? (
+              <button
+                type="button"
+                onClick={() => setInvoiceDialog({ open: true, mode: 'edit', invoice: null })}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg whitespace-nowrap"
+              >
+                <FileText className="w-4 h-4" />
+                Create Invoice
               </button>
             ) : (
               <button
@@ -331,6 +379,117 @@ export const PaymentsView: React.FC = () => {
                       </tr>
                     );
                   })
+                )}
+              </tbody>
+            </table>
+          ) : tab === 'invoices' ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <th className="py-3 px-4">Invoice #</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4">Customer & Booking</th>
+                  <th className="py-3 px-4">Issue / Due Date</th>
+                  <th className="py-3 px-4 text-right">Total (INR)</th>
+                  <th className="py-3 px-4 text-right">Paid / Balance</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-sm">
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-500">
+                      No invoices created yet. Click &ldquo;Create Invoice&rdquo; or generate one from any Booking.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInvoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                      <td className="py-3 px-4 font-mono text-xs font-semibold">{inv.invoiceCode}</td>
+                      <td className="py-3 px-4 text-xs text-slate-600 dark:text-slate-300">{inv.invoiceType}</td>
+                      <td className="py-3 px-4">
+                        <div className="font-medium">{inv.customerName}</div>
+                        <div className="text-xs text-slate-400">
+                          {inv.bookingCode ? `${inv.bookingCode} · ` : ''}
+                          {inv.destination || 'Tour Services'}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-xs tabular-nums">
+                        <div>{formatDate(inv.issueDate)}</div>
+                        <div className="text-slate-400">Due: {formatDate(inv.dueDate)}</div>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold">
+                        <div>{formatCurrency(inv.totalAmount)}</div>
+                        <div className="text-[11px] font-normal text-slate-400">
+                          incl. {inv.gstPercent}% GST
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono tabular-nums text-xs">
+                        <div className="text-emerald-600 dark:text-emerald-400">
+                          Paid: {formatCurrency(inv.paidAmount)}
+                        </div>
+                        <div className="text-amber-600 dark:text-amber-400">
+                          Due: {formatCurrency(inv.balanceDue)}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-xs font-medium">
+                        <span
+                          className={
+                            inv.status === 'Paid'
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : inv.status === 'Cancelled'
+                              ? 'text-red-600 dark:text-red-400'
+                              : inv.status === 'Partial'
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-teal-700 dark:text-teal-400'
+                          }
+                        >
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceDialog({ open: true, mode: 'preview', invoice: inv })}
+                            className="p-1.5 rounded-md text-slate-500 hover:text-teal-600"
+                            title="Preview Invoice"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void generateInvoicePDF(inv, settings)}
+                            className="p-1.5 rounded-md text-slate-500 hover:text-teal-600"
+                            title="Download Invoice PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          {can('payments', 'edit') && (
+                            <button
+                              type="button"
+                              onClick={() => setInvoiceDialog({ open: true, mode: 'edit', invoice: inv })}
+                              className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                              title="Edit Invoice"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          )}
+                          {can('payments', 'delete') && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteInvId(inv.id)}
+                              className="p-1.5 rounded-md text-slate-400 hover:text-red-600"
+                              title="Delete Invoice"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -638,6 +797,25 @@ export const PaymentsView: React.FC = () => {
           if (deleteExpId) await deleteExpense(deleteExpId);
           setDeleteExpId(null);
         }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteInvId)}
+        title="Delete Invoice"
+        message="Are you sure you want to delete this invoice record?"
+        confirmLabel="Delete Invoice"
+        onCancel={() => setDeleteInvId(null)}
+        onConfirm={async () => {
+          if (deleteInvId) await deleteInvoice(deleteInvId);
+          setDeleteInvId(null);
+        }}
+      />
+
+      <InvoiceModal
+        open={invoiceDialog.open}
+        initialMode={invoiceDialog.mode}
+        invoice={invoiceDialog.invoice}
+        onClose={() => setInvoiceDialog({ open: false, mode: 'edit' })}
       />
     </div>
   );

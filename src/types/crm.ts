@@ -295,6 +295,7 @@ export interface Booking {
 
 export interface Hotel {
   id: string;
+  hotelCode?: string;
   name: string;
   country?: 'India' | 'Bhutan';
   region?: HotelRegion;
@@ -334,6 +335,8 @@ export type VehicleCategory =
   | 'Innova'
   | 'Crysta'
   | 'Tempo Traveller'
+  | 'Sumo'
+  | 'Mahindra Bolero Maxx'
   | 'Luxury Vehicles';
 
 export interface Vehicle {
@@ -373,6 +376,49 @@ export interface Payment {
   notes?: string;
   recordedByUid: string;
   createdAt?: any;
+}
+
+export type InvoiceType = 'Tax Invoice' | 'Proforma Invoice';
+export type InvoiceStatus = 'Draft' | 'Issued' | 'Partial' | 'Paid' | 'Cancelled';
+
+export interface InvoiceItem {
+  description: string;
+  hsnSac?: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceCode: string;
+  invoiceType: InvoiceType;
+  bookingId?: string;
+  bookingCode?: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  customerAddress?: string;
+  customerGstin?: string;
+  destination?: string;
+  travelDates?: string;
+  issueDate: string;
+  dueDate?: string;
+  items: InvoiceItem[];
+  subtotal: number;
+  discountAmount?: number;
+  gstPercent: number;
+  gstAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  balanceDue: number;
+  status: InvoiceStatus;
+  notes?: string;
+  termsAndConditions?: string;
+  createdByUid: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface Expense {

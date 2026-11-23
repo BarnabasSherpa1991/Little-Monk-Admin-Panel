@@ -36,6 +36,7 @@ import {
   Expense,
   FollowUp,
   Hotel,
+  Invoice,
   ModuleKey,
   ModulePermission,
   NotificationItem,
@@ -47,8 +48,13 @@ import {
 } from '../types/crm';
 import { canAccess, getDefaultPermissionsForRole } from '../utils/permissions';
 import { generateCode, todayISO } from '../utils/formatters';
-import { isValidHotelRegion, REGION_COUNTRY_MAP } from '../utils/destinations';
 import { seedInitialCRMData } from '../services/seedData';
+import {
+  addHotel as addHotelToFirestore,
+  deleteHotelRecord,
+  hotelsCollection,
+  updateHotelRecord,
+} from '../services/hotelService';
 import { ToastContainer, ToastMessage } from '../components/common/ToastContainer';
 
 function stripUndefined<T extends Record<string, any>>(obj: T): T {
@@ -87,6 +93,7 @@ interface CRMContextValue {
   hotels: Hotel[];
   vehicles: Vehicle[];
   payments: Payment[];
+  invoices: Invoice[];
   expenses: Expense[];
   followUps: FollowUp[];
   employees: Employee[];
@@ -131,6 +138,7 @@ interface CRMContextValue {
   saveBooking: (data: Partial<Booking>, id?: string) => Promise<string>;
   deleteBooking: (id: string) => Promise<void>;
 
+  addHotel: (data: Partial<Hotel>) => Promise<string>;
   saveHotel: (data: Partial<Hotel>, id?: string) => Promise<string>;
   deleteHotel: (id: string) => Promise<void>;
 
@@ -148,6 +156,9 @@ interface CRMContextValue {
     notes: string;
   }) => Promise<string>;
   deletePayment: (id: string) => Promise<void>;
+
+  saveInvoice: (data: Partial<Invoice>, id?: string) => Promise<string>;
+  deleteInvoice: (id: string) => Promise<void>;
 
   saveExpense: (data: Partial<Expense>, id?: string) => Promise<string>;
   deleteExpense: (id: string) => Promise<void>;
@@ -188,7 +199,10 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('azure_crm_theme') === 'dark';
+      const saved =
+        localStorage.getItem('little_monk_crm_theme') ??
+        localStorage.getItem('azure_crm_theme');
+      return saved === 'dark';
     } catch {
       return false;
     }
@@ -204,6 +218,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hotels, setHotels] = useState<Hotel[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -218,7 +233,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
     try {
-      localStorage.setItem('azure_crm_theme', darkMode ? 'dark' : 'light');
+      localStorage.setItem('little_monk_crm_theme', darkMode ? 'dark' : 'light');
     } catch {
       // ignore storage errors
     }
@@ -335,7 +350,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               setCurrentEmployee({ id: refreshed.id, ...refreshed.data() } as Employee);
             } else {
               setAccessDeniedReason(
-                `The Google account ${user.email} has not been invited to Azure Travel CRM yet. Ask your Super Admin (${BOOTSTRAPPED_SUPER_ADMIN_EMAIL}) to send an employee invitation from Team & RBAC.`
+                `The Google account ${user.email} has not been invited to Little Monk Travels CRM yet. Ask your Super Admin (${BOOTSTRAPPED_SUPER_ADMIN_EMAIL}) to send an employee invitation from Team & RBAC.`
               );
               setCurrentEmployee(null);
             }
@@ -380,6 +395,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setHotels([]);
       setVehicles([]);
       setPayments([]);
+      setInvoices([]);
       setExpenses([]);
       setFollowUps([]);
       setEmployees([]);
@@ -421,9 +437,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubs.push(u);
     };
 
+    const getSortMillis = (ts: any) => {
+      if (ts && typeof ts.toMillis === 'function') return ts.toMillis();
+      if (ts === null) return Number.MAX_SAFE_INTEGER;
+      return 0;
+    };
+
     const byCreatedDesc = (a: any, b: any) => {
-      const ta = a.createdAt?.toMillis?.() || 0;
-      const tb = b.createdAt?.toMillis?.() || 0;
+      const ta = getSortMillis(a.createdAt);
+      const tb = getSortMillis(b.createdAt);
       return tb - ta;
     };
 
@@ -467,17 +489,18 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subscribe<Booking>('bookings', qBk, setBookings, byCreatedDesc);
     }
 
-    // Hotels
+    // Hotels (newest created first so newly added hotels appear at the top immediately)
     if (canAccess(currentEmployee, 'hotels', 'view')) {
       const qHotels = isManagerOrAdmin
-        ? collection(db, 'hotels')
+        ? hotelsCollection
         : query(
-            collection(db, 'hotels'),
+            hotelsCollection,
             where('category', 'in', ['Standard', 'Deluxe', 'Premium', 'Luxury'])
           );
-      subscribe<Hotel>('hotels', qHotels, setHotels, (a, b) =>
-        (a.name || '').localeCompare(b.name || '')
-      );
+      subscribe<Hotel>('hotels', qHotels, setHotels, (a, b) => {
+        const diff = byCreatedDesc(a, b);
+        return diff !== 0 ? diff : (a.name || '').localeCompare(b.name || '');
+      });
     }
 
     // Vehicles
@@ -502,6 +525,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? collection(db, 'expenses')
         : query(collection(db, 'expenses'), where('recordedByUid', '==', uid));
       subscribe<Expense>('expenses', qExp, setExpenses, byCreatedDesc);
+    }
+
+    // Invoices
+    if (canAccess(currentEmployee, 'payments', 'view') || canAccess(currentEmployee, 'bookings', 'view')) {
+      const qInv = isManagerOrAdmin
+        ? collection(db, 'invoices')
+        : query(collection(db, 'invoices'), where('createdByUid', '==', uid));
+      subscribe<Invoice>('invoices', qInv, setInvoices, byCreatedDesc);
     }
 
     // Follow-ups
@@ -546,13 +577,91 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             'Tour Reminder',
           ])
         );
-    subscribe<WhatsAppTemplate>('whatsapp_templates', qTpl, setWhatsappTemplates);
+    const isAdminRole =
+      firebaseUser.email?.toLowerCase() === BOOTSTRAPPED_SUPER_ADMIN_EMAIL.toLowerCase() ||
+      ['Super Admin', 'Admin'].includes(currentEmployee.role);
+    const uTpl = onSnapshot(
+      qTpl,
+      (snap) => {
+        const list = snap.docs.map((d) => {
+          const raw = d.data() as Omit<WhatsAppTemplate, 'id'>;
+          const bodyStr = String(raw.body || '');
+          const hasLegacy =
+            /azur[ae]\s*travel/i.test(bodyStr) || bodyStr.includes('azuretravel@hdfcbank');
+          const cleanBody = bodyStr
+            .replace(/azur[ae]\s*travels?/gi, 'Little Monk Travels')
+            .replace(/azuretravel@hdfcbank/g, 'littlemonktravels@hdfcbank');
+          if (hasLegacy && isAdminRole) {
+            void setDoc(doc(db, 'whatsapp_templates', d.id), {
+              name: raw.name,
+              category: raw.category,
+              body: cleanBody,
+              updatedAt: serverTimestamp(),
+            }).catch(() => undefined);
+          }
+          return {
+            id: d.id,
+            ...raw,
+            body: cleanBody,
+          } as WhatsAppTemplate;
+        });
+        setWhatsappTemplates(list);
+      },
+      (err) => handleFirestoreError(err, OperationType.LIST, 'whatsapp_templates')
+    );
+    unsubs.push(uTpl);
 
     // Company Settings
     const uSettings = onSnapshot(
       doc(db, 'settings', 'company'),
       (snap) => {
-        if (snap.exists()) setSettings(snap.data() as CompanySettings);
+        if (snap.exists()) {
+          const raw = snap.data() as CompanySettings;
+          const isLegacyBrand = /azur[ae]\s*travel/i.test(raw.companyName || '');
+          const isLegacyLogo =
+            !raw.logoUrl ||
+            raw.logoUrl.includes('company_logo_mark') ||
+            raw.logoUrl === '/assets/images/little_monk_logo.jpg';
+          const normalized: CompanySettings = {
+            ...raw,
+            companyName:
+              !raw.companyName || isLegacyBrand ? 'Little Monk Travels' : raw.companyName,
+            logoUrl: isLegacyLogo
+              ? '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png'
+              : raw.logoUrl,
+            email:
+              raw.email === 'concierge@azuretravel.in'
+                ? 'concierge@littlemonktravels.in'
+                : raw.email,
+            website:
+              raw.website === 'https://azuretravel.in'
+                ? 'https://littlemonktravels.in'
+                : raw.website,
+            upiId:
+              raw.upiId === 'azuretravel@hdfcbank'
+                ? 'littlemonktravels@hdfcbank'
+                : raw.upiId,
+          };
+          setSettings(normalized);
+
+          const isAdminUser =
+            firebaseUser.email?.toLowerCase() === BOOTSTRAPPED_SUPER_ADMIN_EMAIL.toLowerCase() ||
+            ['Super Admin', 'Admin'].includes(currentEmployee.role);
+          if (
+            isAdminUser &&
+            (isLegacyBrand ||
+              isLegacyLogo ||
+              raw.email === 'concierge@azuretravel.in' ||
+              raw.website === 'https://azuretravel.in' ||
+              raw.upiId === 'azuretravel@hdfcbank')
+          ) {
+            void setDoc(
+              doc(db, 'settings', 'company'),
+              { ...normalized, updatedAt: serverTimestamp() },
+              { merge: true }
+            ).catch(() => undefined);
+          }
+        }
       },
       (err) => handleFirestoreError(err, OperationType.GET, 'settings/company')
     );
@@ -1177,133 +1286,63 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [toast]
   );
 
-  const saveHotel = useCallback(
-    async (data: Partial<Hotel>, id?: string) => {
-      if (!firebaseUser) throw new Error('Not authenticated');
+  const addHotel = useCallback(
+    async (data: Partial<Hotel>) => {
+      if (!firebaseUser) {
+        const msg = 'You are not signed in. Please sign in and try again.';
+        toast('error', msg);
+        throw new Error(msg);
+      }
       try {
-        // Allow quick deactivation of a legacy non-target hotel without blocking on location
-        const isLegacyDeactivateOnly =
-          Boolean(id) &&
-          Object.keys(data).every((k) => k === 'isActive') &&
-          data.isActive === false;
-
-        if (isLegacyDeactivateOnly && id) {
-          await updateDoc(doc(db, 'hotels', id), {
-            isActive: false,
-            updatedAt: serverTimestamp(),
-          });
-          toast('info', 'Hotel marked inactive.');
-          return id;
-        }
-
-        const region = data.region;
-        if (!isValidHotelRegion(region)) {
-          const msg = 'Hotels must belong to Sikkim, Darjeeling, or Bhutan.';
-          toast('error', msg);
-          throw new Error(msg);
-        }
-        const city = (data.city || '').trim();
-        if (!city) {
-          const msg = 'Please select or enter a valid City / Destination.';
-          toast('error', msg);
-          throw new Error(msg);
-        }
-        const cleanName = (data.name || '').trim();
-        if (!cleanName) {
-          const msg = 'Hotel Name is required.';
-          toast('error', msg);
-          throw new Error(msg);
-        }
-
-        // Prevent duplicate hotel records within the same city & region
-        const duplicate = hotels.find(
-          (h) =>
-            h.id !== id &&
-            h.name.trim().toLowerCase() === cleanName.toLowerCase() &&
-            h.region === region &&
-            (h.city || '').trim().toLowerCase() === city.toLowerCase()
+        const result = await addHotelToFirestore(data, {
+          uid: firebaseUser.uid,
+          existingHotels: hotels,
+        });
+        toast(
+          'success',
+          `Hotel Added Successfully — ${result.name} (${result.city}, ${result.region})`
         );
-        if (duplicate) {
-          const msg = `A hotel named "${cleanName}" already exists in ${city}, ${region}.`;
-          toast('error', msg);
-          throw new Error(msg);
-        }
-
-        const country = REGION_COUNTRY_MAP[region];
-        const destination = `${city}, ${region}`.slice(0, 120);
-
-        if (id) {
-          const payload = stripUndefined({
-            ...data,
-            name: cleanName,
-            country,
-            region,
-            city,
-            destination,
-            totalRooms: data.totalRooms !== undefined ? Number(data.totalRooms) : undefined,
-            contractRate: data.contractRate !== undefined ? Number(data.contractRate) : undefined,
-            seasonalRate: data.seasonalRate !== undefined ? Number(data.seasonalRate) : undefined,
-            peakSeasonRate: data.peakSeasonRate !== undefined ? Number(data.peakSeasonRate) : undefined,
-            offSeasonRate: data.offSeasonRate !== undefined ? Number(data.offSeasonRate) : undefined,
-            updatedAt: serverTimestamp(),
-          });
-          delete payload.id;
-          delete payload.createdAt;
-          delete payload.createdByUid;
-          await updateDoc(doc(db, 'hotels', id), payload);
-          toast('success', 'Hotel updated.');
-          return id;
-        } else {
-          const payload = stripUndefined({
-            name: cleanName,
-            country,
-            region,
-            city,
-            destination,
-            address: (data.address || '').trim(),
-            contactPerson: (data.contactPerson || '').trim(),
-            phone: (data.phone || '').trim(),
-            whatsapp: (data.whatsapp || '').trim(),
-            email: (data.email || '').trim(),
-            category: data.category || 'Deluxe',
-            roomTypes: data.roomTypes?.length ? data.roomTypes.slice(0, 15) : ['Deluxe Room'],
-            totalRooms: Number(data.totalRooms ?? 20),
-            mealPlans: data.mealPlans?.length ? data.mealPlans.slice(0, 10) : ['CP'],
-            contractRate: Number(data.contractRate ?? 0),
-            seasonalRate: Number(data.seasonalRate ?? data.contractRate ?? 0),
-            peakSeasonRate: Number(data.peakSeasonRate ?? data.seasonalRate ?? data.contractRate ?? 0),
-            offSeasonRate: Number(data.offSeasonRate ?? data.contractRate ?? 0),
-            checkInTime: data.checkInTime || '14:00',
-            checkOutTime: data.checkOutTime || '11:00',
-            facilities: (data.facilities || []).slice(0, 30),
-            mapLocationUrl: (data.mapLocationUrl || '').trim(),
-            images: (data.images || []).slice(0, 10),
-            policies: data.policies || '',
-            notes: data.notes || '',
-            availability: data.availability || 'Available',
-            isActive: data.isActive ?? true,
-            createdByUid: firebaseUser.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          const ref = await addDoc(collection(db, 'hotels'), payload);
-          toast('success', `Hotel ${payload.name} (${city}, ${region}) added.`);
-          return ref.id;
-        }
+        return result.id;
       } catch (err: any) {
-        if (err?.message?.includes('Sikkim') || err?.message?.includes('already exists') || err?.message?.includes('required') || err?.message?.includes('City')) {
-          throw err;
-        }
-        handleFirestoreError(err, id ? OperationType.UPDATE : OperationType.CREATE, 'hotels');
+        const msg = err?.message || 'Unable to add hotel to database. Please try again.';
+        toast('error', msg);
+        throw err instanceof Error ? err : new Error(msg);
       }
     },
     [firebaseUser, hotels, toast]
   );
 
+  const saveHotel = useCallback(
+    async (data: Partial<Hotel>, id?: string) => {
+      if (!firebaseUser) {
+        const msg = 'You are not signed in. Please sign in and try again.';
+        toast('error', msg);
+        throw new Error(msg);
+      }
+      if (!id) {
+        return addHotel(data);
+      }
+      try {
+        const result = await updateHotelRecord(id, data, { existingHotels: hotels });
+        if (result.isDeactivateOnly) {
+          toast('info', 'Hotel marked inactive.');
+        } else {
+          toast('success', `Hotel "${result.name}" updated successfully.`);
+        }
+        return result.id;
+      } catch (err: any) {
+        const msg = err?.message || 'Unable to update hotel in database. Please try again.';
+        toast('error', msg);
+        throw err instanceof Error ? err : new Error(msg);
+      }
+    },
+    [firebaseUser, hotels, addHotel, toast]
+  );
+
   const deleteHotel = useCallback(
     async (id: string) => {
       try {
-        await deleteDoc(doc(db, 'hotels', id));
+        await deleteHotelRecord(id);
         toast('success', 'Hotel deleted.');
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `hotels/${id}`);
@@ -1438,6 +1477,29 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
+        // Sync linked non-cancelled invoices for this booking
+        const linkedInvoices = invoices.filter(
+          (inv) => inv.bookingId === data.booking.id && inv.status !== 'Cancelled'
+        );
+        linkedInvoices.forEach((inv) => {
+          const nextPaid = Math.min(Number(inv.totalAmount || 0), newAdvance);
+          const nextDue = Math.max(0, Number(inv.totalAmount || 0) - nextPaid);
+          const nextStatus: Invoice['status'] =
+            inv.status === 'Draft' && nextPaid === 0
+              ? 'Draft'
+              : nextDue === 0
+              ? 'Paid'
+              : nextPaid > 0
+              ? 'Partial'
+              : 'Issued';
+          batch.update(doc(db, 'invoices', inv.id), {
+            paidAmount: nextPaid,
+            balanceDue: nextDue,
+            status: nextStatus,
+            updatedAt: serverTimestamp(),
+          });
+        });
+
         await batch.commit();
         toast('success', `${data.type} ${receiptCode} recorded and balances updated.`);
         return payRef.id;
@@ -1445,7 +1507,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         handleFirestoreError(err, OperationType.WRITE, 'payments');
       }
     },
-    [firebaseUser, payments.length, customers, toast]
+    [firebaseUser, payments.length, customers, invoices, toast]
   );
 
   const deletePayment = useCallback(
@@ -1455,6 +1517,126 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toast('success', 'Payment record deleted.');
       } catch (err) {
         handleFirestoreError(err, OperationType.DELETE, `payments/${id}`);
+      }
+    },
+    [toast]
+  );
+
+  const saveInvoice = useCallback(
+    async (data: Partial<Invoice>, id?: string) => {
+      if (!firebaseUser) throw new Error('Not authenticated');
+      try {
+        const prefix = settings?.invoicePrefix || 'INV';
+        const items = (data.items || []).slice(0, 20).map((item) => {
+          const qty = Math.max(1, Number(item.quantity || 1));
+          const unit = Math.max(0, Number(item.unitPrice || 0));
+          return {
+            description: String(item.description || 'Tour Package Services').trim().slice(0, 300),
+            hsnSac: String(item.hsnSac || '998551').trim().slice(0, 20),
+            quantity: qty,
+            unitPrice: unit,
+            amount: Number.isFinite(Number(item.amount)) ? Number(item.amount) : qty * unit,
+          };
+        });
+        const safeItems =
+          items.length > 0
+            ? items
+            : [{ description: 'Tour Services', hsnSac: '998551', quantity: 1, unitPrice: 0, amount: 0 }];
+        const subtotal = safeItems.reduce((s, it) => s + Number(it.amount || 0), 0);
+        const discountAmount = Math.max(0, Number(data.discountAmount ?? 0));
+        const gstPercent = Math.max(0, Number(data.gstPercent ?? settings?.defaultGstPercent ?? 5));
+        const taxable = Math.max(0, subtotal - discountAmount);
+        const gstAmount =
+          data.gstAmount !== undefined && Number.isFinite(Number(data.gstAmount))
+            ? Math.max(0, Number(data.gstAmount))
+            : Math.round((taxable * gstPercent) / 100);
+        const totalAmount =
+          data.totalAmount !== undefined && Number.isFinite(Number(data.totalAmount))
+            ? Math.max(0, Number(data.totalAmount))
+            : taxable + gstAmount;
+        const paidAmount = Math.max(0, Number(data.paidAmount ?? 0));
+        const balanceDue = Math.max(0, totalAmount - paidAmount);
+        const computedStatus: Invoice['status'] =
+          data.status === 'Cancelled'
+            ? 'Cancelled'
+            : data.status === 'Draft'
+            ? 'Draft'
+            : balanceDue === 0 && totalAmount > 0
+            ? 'Paid'
+            : paidAmount > 0 && balanceDue > 0
+            ? 'Partial'
+            : 'Issued';
+
+        if (id) {
+          const payload = stripUndefined({
+            ...data,
+            items: safeItems,
+            subtotal,
+            discountAmount,
+            gstPercent,
+            gstAmount,
+            totalAmount,
+            paidAmount,
+            balanceDue,
+            status: data.status || computedStatus,
+            updatedAt: serverTimestamp(),
+          });
+          delete payload.id;
+          delete payload.createdAt;
+          delete payload.createdByUid;
+          await updateDoc(doc(db, 'invoices', id), payload);
+          toast('success', `Invoice ${data.invoiceCode || ''} updated.`);
+          return id;
+        } else {
+          const invoiceCode = data.invoiceCode || generateCode(prefix, invoices.length);
+          const payload = stripUndefined({
+            invoiceCode,
+            invoiceType: data.invoiceType || 'Tax Invoice',
+            bookingId: data.bookingId || '',
+            bookingCode: data.bookingCode || '',
+            customerId: data.customerId || '',
+            customerName: (data.customerName || '').trim(),
+            customerPhone: data.customerPhone || '',
+            customerEmail: data.customerEmail || '',
+            customerAddress: data.customerAddress || '',
+            customerGstin: data.customerGstin || '',
+            destination: data.destination || '',
+            travelDates: data.travelDates || '',
+            issueDate: data.issueDate || todayISO(),
+            dueDate: data.dueDate || '',
+            items: safeItems,
+            subtotal,
+            discountAmount,
+            gstPercent,
+            gstAmount,
+            totalAmount,
+            paidAmount,
+            balanceDue,
+            status: data.status || computedStatus,
+            notes: data.notes || '',
+            termsAndConditions: data.termsAndConditions || settings?.invoiceTerms || '',
+            createdByUid: firebaseUser.uid,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          const ref = await addDoc(collection(db, 'invoices'), payload);
+          toast('success', `Invoice ${invoiceCode} created.`);
+          return ref.id;
+        }
+      } catch (err) {
+        handleFirestoreError(err, id ? OperationType.UPDATE : OperationType.CREATE, 'invoices');
+      }
+    },
+    [firebaseUser, invoices.length, settings, toast]
+  );
+
+  const deleteInvoice = useCallback(
+    async (id: string) => {
+      try {
+        await deleteDoc(doc(db, 'invoices', id));
+        toast('success', 'Invoice deleted.');
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
       }
     },
     [toast]
@@ -1694,7 +1876,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...data,
           currency: 'INR',
           currencySymbol: '₹',
-          companyName: (data.companyName || settings?.companyName || 'Azure Travel').trim(),
+          companyName: (data.companyName || settings?.companyName || 'Little Monk Travels').trim(),
           defaultGstPercent: Number(data.defaultGstPercent ?? settings?.defaultGstPercent ?? 5),
           updatedAt: serverTimestamp(),
         });
@@ -1769,6 +1951,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hotels,
       vehicles,
       payments,
+      invoices,
       expenses,
       followUps,
       employees,
@@ -1791,12 +1974,15 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteQuotation,
       saveBooking,
       deleteBooking,
+      addHotel,
       saveHotel,
       deleteHotel,
       saveVehicle,
       deleteVehicle,
       recordPayment,
       deletePayment,
+      saveInvoice,
+      deleteInvoice,
       saveExpense,
       deleteExpense,
       saveFollowUp,
@@ -1856,6 +2042,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteQuotation,
       saveBooking,
       deleteBooking,
+      addHotel,
       saveHotel,
       deleteHotel,
       saveVehicle,

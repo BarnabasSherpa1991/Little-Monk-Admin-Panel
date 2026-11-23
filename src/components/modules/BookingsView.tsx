@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Download, Edit2, Plus, Trash2, Wallet, X } from 'lucide-react';
+import { Download, Edit2, FileText, Plus, Trash2, Wallet, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
-import { Booking, BookingHotelSelection, BookingStatus, HotelRegion, Payment } from '../../types/crm';
+import { Booking, BookingHotelSelection, BookingStatus, HotelRegion, Invoice, Payment, VehicleCategory } from '../../types/crm';
 import { formatCurrency, formatDate, todayISO } from '../../utils/formatters';
 import {
   HOTEL_REGIONS,
@@ -9,9 +9,16 @@ import {
   getDestinationScopedHotels,
   inferRegionsFromDestination,
 } from '../../utils/destinations';
+import {
+  getVehicleClassification,
+  LUXURY_VEHICLE_CATEGORIES,
+  NON_LUXURY_VEHICLE_CATEGORIES,
+  VEHICLE_CATEGORY_DEFAULTS,
+} from '../../utils/vehicles';
 import { generateBookingVoucherPDF } from '../../utils/pdfAndExport';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+import { InvoiceModal } from '../common/InvoiceModal';
 
 const BOOKING_STATUSES: BookingStatus[] = ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled'];
 const PAGE_SIZE = 10;
@@ -23,6 +30,7 @@ export const BookingsView: React.FC = () => {
     hotels,
     vehicles,
     employees,
+    invoices,
     settings,
     can,
     saveBooking,
@@ -52,6 +60,12 @@ export const BookingsView: React.FC = () => {
     paymentDate: todayISO(),
     notes: '',
   });
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    mode: 'edit' | 'preview';
+    invoice?: Invoice | null;
+    booking?: Booking | null;
+  }>({ open: false, mode: 'edit' });
 
   const scopedHotelsInfo = useMemo(
     () => getDestinationScopedHotels(hotels, form.destination, hotelRegionFilter, true),
@@ -208,7 +222,7 @@ export const BookingsView: React.FC = () => {
         hotelId: primaryHotelId,
         hotelName: combinedHotelName,
         selectedHotels: normalizedHotels,
-        vehicleDetails: veh ? `${veh.model} (${veh.registrationNumber})` : form.vehicleDetails || '',
+        vehicleDetails: veh ? `${veh.category} · ${veh.model} (${veh.registrationNumber})` : form.vehicleDetails || '',
         operationsManagerName: ops?.name || form.operationsManagerName || '',
         bookingAmount: amt,
         advanceReceived: adv,
@@ -355,6 +369,31 @@ export const BookingsView: React.FC = () => {
                         >
                           <Download className="w-4 h-4" />
                         </button>
+                        {(() => {
+                          const existingInv = invoices.find(
+                            (inv) => inv.bookingId === b.id && inv.status !== 'Cancelled'
+                          );
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setInvoiceDialog(
+                                  existingInv
+                                    ? { open: true, mode: 'preview', invoice: existingInv, booking: b }
+                                    : { open: true, mode: 'edit', invoice: null, booking: b }
+                                )
+                              }
+                              className={`p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 ${
+                                existingInv
+                                  ? 'text-teal-600 dark:text-teal-400'
+                                  : 'text-slate-500 hover:text-teal-600'
+                              }`}
+                              title={existingInv ? `View Invoice (${existingInv.invoiceCode})` : 'Generate Invoice'}
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                          );
+                        })()}
                         {can('payments', 'create') && b.remainingAmount > 0 && b.bookingStatus !== 'Cancelled' && (
                           <button
                             type="button"
@@ -524,14 +563,62 @@ export const BookingsView: React.FC = () => {
                 <div>
                   <label className="block text-xs font-medium mb-1">Vehicle</label>
                   <select
-                    value={form.vehicleId || ''}
-                    onChange={(e) => setForm({ ...form, vehicleId: e.target.value })}
+                    value={form.vehicleId || (form.vehicleDetails?.startsWith('[Category] ') ? `cat:${form.vehicleDetails.replace('[Category] ', '').split(' · ')[0]}` : '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith('cat:')) {
+                        const cat = val.replace('cat:', '') as VehicleCategory;
+                        const tier = getVehicleClassification(cat);
+                        const def = VEHICLE_CATEGORY_DEFAULTS[cat];
+                        setForm({
+                          ...form,
+                          vehicleId: '',
+                          vehicleDetails: `[Category] ${cat} · ${def?.suggestedModel || cat} (${tier})`,
+                        });
+                      } else {
+                        const veh = vehicles.find((v) => v.id === val);
+                        setForm({
+                          ...form,
+                          vehicleId: val,
+                          vehicleDetails: veh ? `${veh.category} · ${veh.model} (${veh.registrationNumber})` : '',
+                        });
+                      }
+                    }}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   >
-                    <option value="">Select Vehicle</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>{v.model} ({v.registrationNumber})</option>
-                    ))}
+                    <option value="">Select Vehicle or Category</option>
+                    <optgroup label="Non-Luxury Vehicle Fleet">
+                      {vehicles
+                        .filter((v) => getVehicleClassification(v.category) === 'Non-Luxury')
+                        .map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.category} · {v.model} ({v.registrationNumber})
+                          </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="Luxury Vehicle Fleet">
+                      {vehicles
+                        .filter((v) => getVehicleClassification(v.category) === 'Luxury')
+                        .map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.category} · {v.model} ({v.registrationNumber})
+                          </option>
+                        ))}
+                    </optgroup>
+                    <optgroup label="Non-Luxury Vehicle Category (Unassigned Reg #)">
+                      {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={`cat-${c}`} value={`cat:${c}`}>
+                          {c} (Non-Luxury)
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Luxury Vehicle Category (Unassigned Reg #)">
+                      {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                        <option key={`cat-${c}`} value={`cat:${c}`}>
+                          {c} (Luxury)
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
                 <div>
@@ -795,6 +882,14 @@ export const BookingsView: React.FC = () => {
           if (deleteId) await deleteBooking(deleteId);
           setDeleteId(null);
         }}
+      />
+
+      <InvoiceModal
+        open={invoiceDialog.open}
+        initialMode={invoiceDialog.mode}
+        invoice={invoiceDialog.invoice}
+        booking={invoiceDialog.booking}
+        onClose={() => setInvoiceDialog({ open: false, mode: 'edit' })}
       />
     </div>
   );

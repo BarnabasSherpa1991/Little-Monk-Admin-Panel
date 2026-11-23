@@ -45,7 +45,7 @@ const AVAILABILITIES: HotelAvailability[] = ['Available', 'Limited', 'Sold Out']
 const PAGE_SIZE = 10;
 
 export const HotelsView: React.FC = () => {
-  const { hotels, can, saveHotel, deleteHotel, toast } = useCRM();
+  const { hotels, can, addHotel, saveHotel, deleteHotel, toast } = useCRM();
 
   // Search & Filter states
   const [search, setSearch] = useState('');
@@ -71,6 +71,9 @@ export const HotelsView: React.FC = () => {
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const formBodyRef = React.useRef<HTMLFormElement | null>(null);
 
   // View Details & Delete confirmation
   const [viewing, setViewing] = useState<Hotel | null>(null);
@@ -186,6 +189,48 @@ export const HotelsView: React.FC = () => {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
+  const resetFormFields = () => {
+    const defaultRegion: HotelRegion = 'Sikkim';
+    const defaultCity = REGION_CITIES_MAP[defaultRegion][0];
+    setEditing(null);
+    setForm({
+      name: '',
+      region: defaultRegion,
+      country: REGION_COUNTRY_MAP[defaultRegion],
+      city: defaultCity,
+      destination: `${defaultCity}, ${defaultRegion}`,
+      address: '',
+      contactPerson: '',
+      phone: '',
+      whatsapp: '',
+      email: '',
+      category: 'Deluxe',
+      roomTypes: ['Deluxe Room', 'Super Deluxe Room'],
+      totalRooms: 24,
+      mealPlans: ['CP', 'MAP'],
+      contractRate: 6500,
+      seasonalRate: 8500,
+      peakSeasonRate: 10500,
+      offSeasonRate: 5500,
+      checkInTime: '14:00',
+      checkOutTime: '11:00',
+      facilities: ['Wi-Fi', 'Mountain View', 'Parking', 'Restaurant', 'Room Heater', '24x7 Hot Water'],
+      mapLocationUrl: '',
+      images: [],
+      policies: '',
+      notes: '',
+      availability: 'Available',
+      isActive: true,
+    });
+    setSelectedCityChoice(defaultCity);
+    setCustomCity('');
+    setCustomRoomType('');
+    setCustomFacility('');
+    setImageUrlInput('');
+    setFormError(null);
+    setImageError(null);
+  };
+
   const openCreate = () => {
     const defaultRegion: HotelRegion = regionFilter !== 'All' ? regionFilter : 'Sikkim';
     const defaultCity = REGION_CITIES_MAP[defaultRegion][0];
@@ -224,12 +269,13 @@ export const HotelsView: React.FC = () => {
     setCustomRoomType('');
     setCustomFacility('');
     setImageUrlInput('');
+    setFormError(null);
+    setImageError(null);
     setFormOpen(true);
   };
 
   const openEdit = (h: Hotel) => {
-    const region: HotelRegion =
-      inferHotelRegionFromRecord(h) || 'Sikkim';
+    const region: HotelRegion = inferHotelRegionFromRecord(h) || 'Sikkim';
     const presetCities = REGION_CITIES_MAP[region].filter((c) => c !== 'Other');
     const existingCity = (h.city || '').trim();
     const isPreset = presetCities.includes(existingCity);
@@ -264,6 +310,8 @@ export const HotelsView: React.FC = () => {
     setCustomRoomType('');
     setCustomFacility('');
     setImageUrlInput('');
+    setFormError(null);
+    setImageError(null);
     setFormOpen(true);
   };
 
@@ -309,8 +357,26 @@ export const HotelsView: React.FC = () => {
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setImageError(null);
+    if (!file.type.startsWith('image/')) {
+      const msg = 'Image upload failed: Please choose a valid image file (PNG, JPG, WebP).';
+      setImageError(msg);
+      toast('error', msg);
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      const msg = 'Image upload failed: Image file must be 5 MB or smaller.';
+      setImageError(msg);
+      toast('error', msg);
+      e.target.value = '';
+      return;
+    }
     if ((form.images || []).length >= 10) {
-      toast('error', 'Maximum 10 hotel images allowed.');
+      const msg = 'Maximum 10 hotel images allowed.';
+      setImageError(msg);
+      toast('error', msg);
+      e.target.value = '';
       return;
     }
     setUploadingImage(true);
@@ -324,7 +390,9 @@ export const HotelsView: React.FC = () => {
       }));
       toast('success', 'Hotel image uploaded.');
     } catch (err: any) {
-      toast('error', err?.message || 'Image upload failed. You can also paste an image URL.');
+      const msg = `Image upload failed: ${err?.message || 'Storage unavailable'}. You can also paste an image URL below.`;
+      setImageError(msg);
+      toast('error', msg);
     } finally {
       setUploadingImage(false);
       e.target.value = '';
@@ -333,50 +401,202 @@ export const HotelsView: React.FC = () => {
 
   const addImageUrl = () => {
     const url = imageUrlInput.trim();
+    setImageError(null);
     if (!url) return;
     if ((form.images || []).length >= 10) {
-      toast('error', 'Maximum 10 hotel images allowed.');
+      const msg = 'Maximum 10 hotel images allowed.';
+      setImageError(msg);
+      toast('error', msg);
+      return;
+    }
+    if (!url.startsWith('/') && !/^https?:\/\//i.test(url)) {
+      const msg = 'Invalid image URL: Enter an https:// URL or local /assets/... path.';
+      setImageError(msg);
+      toast('error', msg);
       return;
     }
     setForm((prev) => ({
       ...prev,
-      images: [...(prev.images || []), url].slice(0, 10),
+      images: Array.from(new Set([...(prev.images || []), url])).slice(0, 10),
     }));
     setImageUrlInput('');
   };
 
+  const isValidPhoneInput = (val: string) => {
+    const cleaned = val.trim();
+    if (!cleaned) return true;
+    if (!/^[+\d\s\-()]+$/.test(cleaned)) return false;
+    const digits = cleaned.replace(/\D/g, '');
+    return digits.length >= 7 && digits.length <= 15;
+  };
+
+  const isValidEmailInput = (val: string) => {
+    const cleaned = val.trim();
+    if (!cleaned) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned);
+  };
+
+  const normalizeOptionalUrl = (val: string): { valid: boolean; normalized: string } => {
+    const cleaned = val.trim();
+    if (!cleaned) return { valid: true, normalized: '' };
+    const candidate =
+      !/^https?:\/\//i.test(cleaned) && /^(www\.|maps\.google\.|goo\.gl\/)/i.test(cleaned)
+        ? `https://${cleaned}`
+        : cleaned;
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { valid: false, normalized: cleaned };
+      }
+      return { valid: true, normalized: candidate };
+    } catch {
+      return { valid: false, normalized: cleaned };
+    }
+  };
+
   const handleSave = async (ev: React.FormEvent) => {
     ev.preventDefault();
-    const region = form.region;
-    if (!isValidHotelRegion(region)) {
-      toast('error', 'Please select Sikkim, Darjeeling, or Bhutan.');
+    setFormError(null);
+    setImageError(null);
+
+    const showValidationError = (msg: string) => {
+      setFormError(msg);
+      toast('error', msg);
+      formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const hotelName = (form.name || '').trim();
+    if (!hotelName) {
+      showValidationError('Missing required information: Please enter the Hotel Name.');
       return;
     }
+
+    const region = form.region;
+    if (!isValidHotelRegion(region)) {
+      showValidationError('Invalid destination selection: Please select Sikkim, Darjeeling, or Bhutan.');
+      return;
+    }
+
     const finalCity =
       selectedCityChoice === 'Other' ? customCity.trim() : selectedCityChoice.trim();
-    if (!form.name?.trim() || !finalCity) {
-      toast('error', 'Hotel Name and City / Destination are required.');
+    if (!finalCity) {
+      showValidationError(
+        selectedCityChoice === 'Other'
+          ? `Missing required information: Please specify the city/location within ${region}.`
+          : 'Missing required information: Please select a City / Destination.'
+      );
       return;
+    }
+
+    if (!CATEGORIES.includes((form.category || 'Deluxe') as HotelCategory)) {
+      showValidationError('Missing required information: Please select a valid Hotel Category.');
+      return;
+    }
+
+    const contractRate = Number(form.contractRate);
+    if (!Number.isFinite(contractRate) || contractRate < 0) {
+      showValidationError('Invalid pricing: Contract Rate (₹) must be 0 or greater.');
+      return;
+    }
+
+    const seasonalRate = Number(form.seasonalRate ?? contractRate);
+    const peakSeasonRate = Number(form.peakSeasonRate ?? seasonalRate);
+    const offSeasonRate = Number(form.offSeasonRate ?? contractRate);
+    if (
+      !Number.isFinite(seasonalRate) || seasonalRate < 0 ||
+      !Number.isFinite(peakSeasonRate) || peakSeasonRate < 0 ||
+      !Number.isFinite(offSeasonRate) || offSeasonRate < 0
+    ) {
+      showValidationError('Invalid pricing: All room rates must be valid non-negative INR amounts.');
+      return;
+    }
+
+    const totalRooms = Number(form.totalRooms ?? 20);
+    if (!Number.isFinite(totalRooms) || totalRooms < 1) {
+      showValidationError('Invalid room count: Total Rooms must be at least 1.');
+      return;
+    }
+
+    if (!isValidPhoneInput(form.phone || '')) {
+      showValidationError('Invalid mobile number: Enter a valid 7–15 digit phone number.');
+      return;
+    }
+
+    if (!isValidPhoneInput(form.whatsapp || '')) {
+      showValidationError('Invalid WhatsApp number: Enter a valid 7–15 digit WhatsApp number.');
+      return;
+    }
+
+    if (!isValidEmailInput(form.email || '')) {
+      showValidationError('Invalid email address: Please enter a valid email (e.g. reservations@hotel.com).');
+      return;
+    }
+
+    const mapCheck = normalizeOptionalUrl(form.mapLocationUrl || '');
+    if (!mapCheck.valid) {
+      showValidationError('Invalid Google Maps URL: Please enter a valid https:// link.');
+      return;
+    }
+
+    let finalImages = [...(form.images || [])];
+    const pendingImg = imageUrlInput.trim();
+    if (pendingImg) {
+      if (!pendingImg.startsWith('/') && !/^https?:\/\//i.test(pendingImg)) {
+        showValidationError('Invalid image URL: Enter an https:// image link or clear the image URL box.');
+        return;
+      }
+      finalImages = Array.from(new Set([...finalImages, pendingImg])).slice(0, 10);
     }
 
     setSaving(true);
     try {
-      await saveHotel(
-        {
-          ...form,
-          name: form.name.trim(),
-          region,
-          country: REGION_COUNTRY_MAP[region],
-          city: finalCity,
-          destination: `${finalCity}, ${region}`,
-          roomTypes: (form.roomTypes || ['Deluxe Room']).slice(0, 15),
-          mealPlans: (form.mealPlans || ['CP']).slice(0, 10),
-          facilities: (form.facilities || []).slice(0, 30),
-          images: (form.images || []).slice(0, 10),
-        },
-        editing?.id
-      );
+      const hotelPayload: Partial<Hotel> = {
+        ...(editing?.hotelCode ? { hotelCode: editing.hotelCode } : {}),
+        name: hotelName,
+        country: REGION_COUNTRY_MAP[region],
+        region,
+        city: finalCity,
+        destination: `${finalCity}, ${region}`,
+        address: (form.address || '').trim(),
+        contactPerson: (form.contactPerson || '').trim(),
+        phone: (form.phone || '').trim(),
+        whatsapp: (form.whatsapp || '').trim(),
+        email: (form.email || '').trim(),
+        category: (form.category || 'Deluxe') as HotelCategory,
+        roomTypes: (form.roomTypes && form.roomTypes.length > 0 ? form.roomTypes : ['Deluxe Room']).slice(0, 15),
+        totalRooms,
+        mealPlans: (form.mealPlans && form.mealPlans.length > 0 ? form.mealPlans : ['CP']).slice(0, 10),
+        contractRate,
+        seasonalRate,
+        peakSeasonRate,
+        offSeasonRate,
+        checkInTime: (form.checkInTime || '14:00').trim() || '14:00',
+        checkOutTime: (form.checkOutTime || '11:00').trim() || '11:00',
+        facilities: (form.facilities || []).slice(0, 30),
+        mapLocationUrl: mapCheck.normalized,
+        images: finalImages,
+        policies: (form.policies || '').trim(),
+        notes: (form.notes || '').trim(),
+        availability: (form.availability || 'Available') as HotelAvailability,
+        isActive: form.isActive !== false,
+      };
+
+      if (editing?.id) {
+        await saveHotel(hotelPayload, editing.id);
+      } else {
+        await addHotel(hotelPayload);
+      }
+
+      // On create: ensure the newly added hotel appears immediately at the top of page 1
+      if (!editing) {
+        clearFilters();
+      }
+      resetFormFields();
       setFormOpen(false);
+    } catch (err: any) {
+      const msg = err?.message || 'Unable to save hotel. Please check your connection and try again.';
+      setFormError(msg);
+      formBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
     }
@@ -662,13 +882,20 @@ export const HotelsView: React.FC = () => {
                       }`}
                     >
                       <td className="py-3 px-4">
-                        <button
-                          type="button"
-                          onClick={() => setViewing(h)}
-                          className="font-medium text-slate-900 dark:text-slate-100 hover:text-teal-600 text-left cursor-pointer"
-                        >
-                          {h.name}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setViewing(h)}
+                            className="font-medium text-slate-900 dark:text-slate-100 hover:text-teal-600 text-left cursor-pointer"
+                          >
+                            {h.name}
+                          </button>
+                          {h.hotelCode && (
+                            <span className="font-mono text-[11px] text-slate-400">
+                              {h.hotelCode}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
                           <MapPin className="w-3 h-3 text-teal-600 shrink-0" />
                           <span>{formatHotelLocation(h)}</span>
@@ -978,7 +1205,24 @@ export const HotelsView: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="p-6 space-y-5 max-h-[78vh] overflow-y-auto">
+            <form ref={formBodyRef} noValidate onSubmit={handleSave} className="p-6 space-y-5 max-h-[78vh] overflow-y-auto">
+              {formError && (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2.5 p-3.5 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-xs text-red-700 dark:text-red-300"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="flex-1 leading-relaxed font-medium">{formError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFormError(null)}
+                    className="text-red-400 hover:text-red-600 cursor-pointer"
+                    aria-label="Dismiss error"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               {/* Location & Identity */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="sm:col-span-3">
@@ -1391,6 +1635,9 @@ export const HotelsView: React.FC = () => {
                       <ImagePlus className="w-3.5 h-3.5" /> Add
                     </button>
                   </div>
+                  {imageError && (
+                    <p className="text-xs text-red-600 dark:text-red-400">{imageError}</p>
+                  )}
                   {(form.images || []).length > 0 && (
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                       {(form.images || []).map((img, i) => (
@@ -1457,10 +1704,10 @@ export const HotelsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || uploadingImage}
                   className="px-5 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50 cursor-pointer"
                 >
-                  {saving ? 'Saving...' : 'Save Hotel'}
+                  {saving ? 'Saving...' : editing ? 'Update Hotel' : 'Save Hotel'}
                 </button>
               </div>
             </form>

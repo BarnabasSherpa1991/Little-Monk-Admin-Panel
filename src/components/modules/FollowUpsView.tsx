@@ -196,7 +196,7 @@ export const FollowUpsView: React.FC = () => {
                   <a
                     href={buildWhatsAppLink(
                       f.customerPhone,
-                      `Hello ${f.customerName || ''}, following up from Azure Travel regarding: ${f.title}`
+                      `Hello ${f.customerName || ''}, following up from Little Monk Travels regarding: ${f.title}`
                     )}
                     target="_blank"
                     rel="noreferrer"

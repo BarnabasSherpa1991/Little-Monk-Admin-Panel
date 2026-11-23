@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Edit2, Plus, Power, Trash2, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
-import { HotelRegion, ItineraryDay, TourPackage } from '../../types/crm';
+import { HotelRegion, ItineraryDay, TourPackage, VehicleCategory } from '../../types/crm';
 import { formatCurrency } from '../../utils/formatters';
 import {
   formatHotelLocation,
@@ -9,6 +9,12 @@ import {
   HOTEL_REGIONS,
   inferRegionsFromDestination,
 } from '../../utils/destinations';
+import {
+  getVehicleClassification,
+  LUXURY_VEHICLE_CATEGORIES,
+  NON_LUXURY_VEHICLE_CATEGORIES,
+  VEHICLE_CATEGORY_DEFAULTS,
+} from '../../utils/vehicles';
 import { SearchInput } from '../common/DataTableToolbar';
 import { ImageWithFallback } from '../common/ImageWithFallback';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -498,11 +504,38 @@ export const PackagesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Vehicle Details</label>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <label className="block text-xs font-medium">Vehicle Details</label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const cat = e.target.value as VehicleCategory;
+                        if (!cat) return;
+                        const def = VEHICLE_CATEGORY_DEFAULTS[cat];
+                        const tier = getVehicleClassification(cat);
+                        const label = `Exclusive ${cat} · ${def.suggestedModel} (${tier}, ${def.seatingCapacity} Seater)`;
+                        setForm({ ...form, vehicleDetails: label });
+                      }}
+                      className="px-2 py-1 text-[11px] border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-950"
+                    >
+                      <option value="">Quick Select Vehicle Category...</option>
+                      <optgroup label="Non-Luxury Vehicle">
+                        {NON_LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c} ({VEHICLE_CATEGORY_DEFAULTS[c].seatingCapacity} Seater)</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Luxury Vehicle">
+                        {LUXURY_VEHICLE_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c} ({VEHICLE_CATEGORY_DEFAULTS[c].seatingCapacity} Seater)</option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
                   <input
                     type="text"
                     value={form.vehicleDetails || ''}
                     onChange={(e) => setForm({ ...form, vehicleDetails: e.target.value })}
+                    placeholder="e.g. Exclusive Sumo · Tata Sumo Gold (Non-Luxury, 9 Seater)"
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   />
                 </div>

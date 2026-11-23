@@ -234,15 +234,16 @@
       "description": "Partner hotel property with contract and seasonal rates",
       "type": "object",
       "properties": {
+        "hotelCode": { "type": "string", "maxLength": 40 },
         "name": { "type": "string", "minLength": 1, "maxLength": 150 },
         "country": { "type": "string", "enum": ["India", "Bhutan"] },
         "region": { "type": "string", "enum": ["Sikkim", "Darjeeling", "Bhutan"] },
         "city": { "type": "string", "maxLength": 100 },
         "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
-        "address": { "type": "string", "maxLength": 300 },
+        "address": { "type": "string", "maxLength": 600 },
         "contactPerson": { "type": "string", "maxLength": 120 },
-        "phone": { "type": "string", "maxLength": 30 },
-        "whatsapp": { "type": "string", "maxLength": 30 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "whatsapp": { "type": "string", "maxLength": 40 },
         "email": { "type": "string", "maxLength": 160 },
         "category": { "type": "string", "enum": ["Standard", "Deluxe", "Premium", "Luxury"] },
         "roomTypes": { "type": "array" },
@@ -255,7 +256,7 @@
         "checkInTime": { "type": "string", "maxLength": 30 },
         "checkOutTime": { "type": "string", "maxLength": 30 },
         "facilities": { "type": "array" },
-        "mapLocationUrl": { "type": "string", "maxLength": 500 },
+        "mapLocationUrl": { "type": "string", "maxLength": 2000 },
         "images": { "type": "array" },
         "policies": { "type": "string", "maxLength": 2000 },
         "notes": { "type": "string", "maxLength": 1500 },
@@ -275,7 +276,7 @@
         "registrationNumber": { "type": "string", "minLength": 2, "maxLength": 40 },
         "category": {
           "type": "string",
-          "enum": ["Hatchback", "Sedan", "SUV", "Innova", "Crysta", "Tempo Traveller", "Luxury Vehicles"]
+          "enum": ["Hatchback", "Sedan", "SUV", "Innova", "Crysta", "Tempo Traveller", "Sumo", "Mahindra Bolero Maxx", "Luxury Vehicles"]
         },
         "model": { "type": "string", "minLength": 1, "maxLength": 120 },
         "seatingCapacity": { "type": "number" },
@@ -314,6 +315,42 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["receiptCode", "type", "bookingId", "customerName", "amount", "mode", "paymentDate", "recordedByUid", "createdAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Customer Tax or Proforma Invoice with itemized charges and GST breakdown",
+      "type": "object",
+      "properties": {
+        "invoiceCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "invoiceType": { "type": "string", "enum": ["Tax Invoice", "Proforma Invoice"] },
+        "bookingId": { "type": "string", "maxLength": 128 },
+        "bookingCode": { "type": "string", "maxLength": 40 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "customerAddress": { "type": "string", "maxLength": 300 },
+        "customerGstin": { "type": "string", "maxLength": 40 },
+        "destination": { "type": "string", "maxLength": 120 },
+        "travelDates": { "type": "string", "maxLength": 80 },
+        "issueDate": { "type": "string", "minLength": 4, "maxLength": 30 },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "gstPercent": { "type": "number" },
+        "gstAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "balanceDue": { "type": "number" },
+        "status": { "type": "string", "enum": ["Draft", "Issued", "Partial", "Paid", "Cancelled"] },
+        "notes": { "type": "string", "maxLength": 1500 },
+        "termsAndConditions": { "type": "string", "maxLength": 4000 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["invoiceCode", "invoiceType", "customerName", "issueDate", "items", "subtotal", "gstPercent", "gstAmount", "totalAmount", "paidAmount", "balanceDue", "status", "createdByUid", "createdAt", "updatedAt"]
     },
     "Expense": {
       "title": "Expense",
@@ -465,6 +502,10 @@
     "/payments/{paymentId}": {
       "schema": { "$ref": "#/entities/Payment" },
       "description": "Customer payment collections and refunds"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Customer tax and proforma invoices"
     },
     "/expenses/{expenseId}": {
       "schema": { "$ref": "#/entities/Expense" },

@@ -621,7 +621,7 @@ export const EmployeesView: React.FC = () => {
                     type="email"
                     value={inviteForm.email}
                     onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                    placeholder="rohan@azuretravel.in"
+                    placeholder="rohan@littlemonktravels.in"
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   />
                 </div>
@@ -826,7 +826,7 @@ export const EmployeesView: React.FC = () => {
       <ConfirmDialog
         open={Boolean(confirmDeleteEmp)}
         title="Revoke Employee Access"
-        message={`Remove ${confirmDeleteEmp?.name} (${confirmDeleteEmp?.email}) from Azure Travel CRM? They will immediately lose access.`}
+        message={`Remove ${confirmDeleteEmp?.name} (${confirmDeleteEmp?.email}) from Little Monk Travels CRM? They will immediately lose access.`}
         confirmLabel="Revoke Access"
         onCancel={() => setConfirmDeleteEmp(null)}
         onConfirm={async () => {

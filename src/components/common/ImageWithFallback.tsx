@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Compass } from 'lucide-react';
 
 interface ImageWithFallbackProps {
@@ -15,6 +15,10 @@ export const ImageWithFallback: React.FC<ImageWithFallbackProps> = ({
   fallbackTitle,
 }) => {
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
   if (!src || failed) {
     return (

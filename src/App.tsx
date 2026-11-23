@@ -37,7 +37,7 @@ const WorkspaceShell: React.FC = () => {
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 rounded-full border-2 border-teal-600 border-t-transparent animate-spin" />
           <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">
-            Loading Azure Travel CRM workspace...
+            Loading Little Monk Travels CRM workspace...
           </p>
         </div>
       </div>

@@ -98,16 +98,16 @@ export const Sidebar: React.FC = () => {
       {/* Brand header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80 shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg overflow-hidden bg-white shrink-0">
+          <div className="w-9 h-9 rounded-lg overflow-hidden bg-black shrink-0 p-0.5 border border-slate-700/60">
             <ImageWithFallback
-              src={settings?.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg'}
-              alt="Azure Travel"
-              className="w-full h-full object-cover"
+              src={settings?.logoUrl || '/assets/aistudio/Screenshot_2026-11-23_132939_51fcd266.png'}
+              alt="Little Monk Travels"
+              className="w-full h-full object-contain"
             />
           </div>
           {!collapsed && (
             <span className="font-semibold text-sm tracking-tight text-white truncate whitespace-nowrap">
-              {settings?.companyName || 'Azure Travel'}
+              {settings?.companyName || 'Little Monk Travels'}
             </span>
           )}
         </div>
