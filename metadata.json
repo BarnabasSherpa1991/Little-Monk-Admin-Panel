@@ -1,0 +1,6 @@
+{
+  "name": "Azure Travel CRM",
+  "description": "Complete Travel Agency CRM & Admin Management System for managing enquiries, quotations, bookings, hotels, transport fleet, accounts, follow-ups, and team roles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,473 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "CRM staff user profile and role-based permissions",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": {
+          "type": "string",
+          "enum": ["Super Admin", "Admin", "Sales Manager", "Sales Executive", "Operations Manager", "Accounts Manager", "Customer Support"]
+        },
+        "department": { "type": "string", "maxLength": 60 },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "permissions": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role", "status", "permissions", "createdAt", "updatedAt"]
+    },
+    "EmployeeInvite": {
+      "title": "EmployeeInvite",
+      "description": "Pending employee invitation keyed by lowercase email",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 160 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": {
+          "type": "string",
+          "enum": ["Super Admin", "Admin", "Sales Manager", "Sales Executive", "Operations Manager", "Accounts Manager", "Customer Support"]
+        },
+        "department": { "type": "string", "maxLength": 60 },
+        "permissions": { "type": "object" },
+        "invitedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "name", "role", "permissions", "invitedByUid", "createdAt"]
+    },
+    "Enquiry": {
+      "title": "Enquiry",
+      "description": "Customer travel enquiry lead",
+      "type": "object",
+      "properties": {
+        "enquiryCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "mobile": { "type": "string", "minLength": 5, "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 160 },
+        "source": {
+          "type": "string",
+          "enum": ["Website", "Facebook", "Instagram", "Google", "Referral", "Justdial", "Tour Travel World", "Walk-in", "Other"]
+        },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "startDate": { "type": "string", "maxLength": 30 },
+        "endDate": { "type": "string", "maxLength": 30 },
+        "adults": { "type": "number" },
+        "children": { "type": "number" },
+        "infants": { "type": "number" },
+        "rooms": { "type": "number" },
+        "hotelCategory": { "type": "string", "enum": ["Standard", "Deluxe", "Premium", "Luxury"] },
+        "budget": { "type": "number" },
+        "preferredVehicle": { "type": "string", "maxLength": 80 },
+        "specialRequirements": { "type": "string", "maxLength": 2000 },
+        "assignedToUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "enquiryDate": { "type": "string", "maxLength": 30 },
+        "followUpDate": { "type": "string", "maxLength": 30 },
+        "status": {
+          "type": "string",
+          "enum": ["New Enquiry", "Contacted", "Follow-up Required", "Quotation Sent", "Negotiation", "Booking Confirmed", "Lost", "Cancelled"]
+        },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["enquiryCode", "customerName", "mobile", "source", "destination", "adults", "hotelCategory", "budget", "assignedToUid", "enquiryDate", "status", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "EnquiryActivity": {
+      "title": "EnquiryActivity",
+      "description": "Internal note or communication log entry on an enquiry",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["Note", "Call", "WhatsApp", "Email", "Status Change", "Quotation"] },
+        "content": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "authorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "maxLength": 120 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "content", "authorUid", "authorName", "createdAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer profile and financial ledger summary",
+      "type": "object",
+      "properties": {
+        "customerCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "mobile": { "type": "string", "minLength": 5, "maxLength": 30 },
+        "whatsapp": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 160 },
+        "address": { "type": "string", "maxLength": 300 },
+        "city": { "type": "string", "maxLength": 100 },
+        "preferences": { "type": "string", "maxLength": 1000 },
+        "specialRequests": { "type": "string", "maxLength": 1000 },
+        "internalRemarks": { "type": "string", "maxLength": 1500 },
+        "documents": { "type": "array" },
+        "totalBookings": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "outstandingBalance": { "type": "number" },
+        "assignedToUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerCode", "name", "mobile", "totalBookings", "totalSpent", "outstandingBalance", "assignedToUid", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "TourPackage": {
+      "title": "TourPackage",
+      "description": "Tour package catalog item with itinerary and pricing",
+      "type": "object",
+      "properties": {
+        "packageCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "days": { "type": "number" },
+        "nights": { "type": "number" },
+        "description": { "type": "string", "maxLength": 3000 },
+        "highlights": { "type": "array" },
+        "itinerary": { "type": "array" },
+        "hotelDetails": { "type": "string", "maxLength": 1000 },
+        "vehicleDetails": { "type": "string", "maxLength": 1000 },
+        "inclusions": { "type": "string", "maxLength": 2000 },
+        "exclusions": { "type": "string", "maxLength": 2000 },
+        "price": { "type": "number" },
+        "childPrice": { "type": "number" },
+        "seasonalPrice": { "type": "number" },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "termsAndConditions": { "type": "string", "maxLength": 3000 },
+        "isActive": { "type": "boolean" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["packageCode", "name", "destination", "days", "nights", "price", "isActive", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Quotation": {
+      "title": "Quotation",
+      "description": "Versioned travel quotation with itemized pricing and GST",
+      "type": "object",
+      "properties": {
+        "quoteCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "version": { "type": "number" },
+        "enquiryId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "startDate": { "type": "string", "maxLength": 30 },
+        "endDate": { "type": "string", "maxLength": 30 },
+        "paxSummary": { "type": "string", "maxLength": 120 },
+        "hotelItems": { "type": "array" },
+        "transportItems": { "type": "array" },
+        "sightseeingCharge": { "type": "number" },
+        "mealsCharge": { "type": "number" },
+        "otherExpenses": { "type": "number" },
+        "subtotal": { "type": "number" },
+        "markupPercent": { "type": "number" },
+        "markupAmount": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "gstPercent": { "type": "number" },
+        "gstAmount": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "inclusions": { "type": "string", "maxLength": 2000 },
+        "exclusions": { "type": "string", "maxLength": 2000 },
+        "termsAndConditions": { "type": "string", "maxLength": 3000 },
+        "status": { "type": "string", "enum": ["Draft", "Sent", "Viewed", "Revised", "Accepted", "Rejected"] },
+        "assignedToUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["quoteCode", "version", "customerName", "destination", "subtotal", "totalCost", "status", "assignedToUid", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Confirmed or pending tour booking record",
+      "type": "object",
+      "properties": {
+        "bookingCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "enquiryId": { "type": "string", "maxLength": 128 },
+        "quotationId": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "customerEmail": { "type": "string", "maxLength": 160 },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "startDate": { "type": "string", "minLength": 4, "maxLength": 30 },
+        "endDate": { "type": "string", "minLength": 4, "maxLength": 30 },
+        "adults": { "type": "number" },
+        "children": { "type": "number" },
+        "infants": { "type": "number" },
+        "packageId": { "type": "string", "maxLength": 128 },
+        "packageName": { "type": "string", "maxLength": 150 },
+        "hotelId": { "type": "string", "maxLength": 128 },
+        "hotelName": { "type": "string", "maxLength": 150 },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "vehicleDetails": { "type": "string", "maxLength": 200 },
+        "bookingAmount": { "type": "number" },
+        "advanceReceived": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["Unpaid", "Partial", "Paid", "Refunded"] },
+        "bookingStatus": { "type": "string", "enum": ["Pending", "Confirmed", "In Progress", "Completed", "Cancelled"] },
+        "operationsManagerUid": { "type": "string", "maxLength": 128 },
+        "operationsManagerName": { "type": "string", "maxLength": 120 },
+        "assignedToUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "specialNotes": { "type": "string", "maxLength": 2000 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bookingCode", "customerName", "destination", "startDate", "endDate", "adults", "bookingAmount", "advanceReceived", "remainingAmount", "paymentStatus", "bookingStatus", "assignedToUid", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Hotel": {
+      "title": "Hotel",
+      "description": "Partner hotel property with contract and seasonal rates",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 300 },
+        "contactPerson": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 160 },
+        "category": { "type": "string", "enum": ["Standard", "Deluxe", "Premium", "Luxury"] },
+        "roomTypes": { "type": "array" },
+        "mealPlans": { "type": "array" },
+        "contractRate": { "type": "number" },
+        "seasonalRate": { "type": "number" },
+        "checkInTime": { "type": "string", "maxLength": 30 },
+        "checkOutTime": { "type": "string", "maxLength": 30 },
+        "policies": { "type": "string", "maxLength": 2000 },
+        "notes": { "type": "string", "maxLength": 1500 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "destination", "category", "contractRate", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Fleet vehicle and driver assignment record",
+      "type": "object",
+      "properties": {
+        "registrationNumber": { "type": "string", "minLength": 2, "maxLength": 40 },
+        "category": {
+          "type": "string",
+          "enum": ["Hatchback", "Sedan", "SUV", "Innova", "Crysta", "Tempo Traveller", "Luxury Vehicles"]
+        },
+        "model": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "seatingCapacity": { "type": "number" },
+        "driverName": { "type": "string", "maxLength": 120 },
+        "driverPhone": { "type": "string", "maxLength": 30 },
+        "vendorDetails": { "type": "string", "maxLength": 200 },
+        "perDayRate": { "type": "number" },
+        "perKmRate": { "type": "number" },
+        "availability": { "type": "string", "enum": ["Available", "On Trip", "Reserved", "Maintenance"] },
+        "assignedBookingCode": { "type": "string", "maxLength": 40 },
+        "maintenanceStatus": { "type": "string", "enum": ["Good", "Due Soon", "In Service"] },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["registrationNumber", "category", "model", "seatingCapacity", "perDayRate", "availability", "maintenanceStatus", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Customer payment receipt or refund transaction",
+      "type": "object",
+      "properties": {
+        "receiptCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "type": { "type": "string", "enum": ["Customer Collection", "Refund"] },
+        "bookingId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "bookingCode": { "type": "string", "maxLength": 40 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "amount": { "type": "number" },
+        "gstComponent": { "type": "number" },
+        "mode": { "type": "string", "enum": ["Cash", "UPI", "Bank Transfer", "Credit/Debit Card", "Payment Gateway"] },
+        "referenceNumber": { "type": "string", "maxLength": 100 },
+        "paymentDate": { "type": "string", "maxLength": 30 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "recordedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["receiptCode", "type", "bookingId", "customerName", "amount", "mode", "paymentDate", "recordedByUid", "createdAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Supplier payment or operational expense record",
+      "type": "object",
+      "properties": {
+        "expenseCode": { "type": "string", "minLength": 3, "maxLength": 40 },
+        "category": { "type": "string", "enum": ["Hotel Payment", "Transport Payment", "Sightseeing/Vendor", "Office/Marketing", "Other"] },
+        "vendorName": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "bookingCode": { "type": "string", "maxLength": 40 },
+        "amount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "pendingAmount": { "type": "number" },
+        "mode": { "type": "string", "enum": ["Cash", "UPI", "Bank Transfer", "Credit/Debit Card", "Payment Gateway"] },
+        "status": { "type": "string", "enum": ["Pending", "Partial", "Paid"] },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "recordedByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["expenseCode", "category", "vendorName", "amount", "paidAmount", "pendingAmount", "status", "recordedByUid", "createdAt", "updatedAt"]
+    },
+    "FollowUp": {
+      "title": "FollowUp",
+      "description": "Scheduled follow-up task and reminder",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "type": { "type": "string", "enum": ["Enquiry Follow-up", "Payment Reminder", "Pre-Tour Check", "Post-Tour Feedback", "Internal Task"] },
+        "relatedEntityType": { "type": "string", "enum": ["enquiry", "booking", "customer", "general"] },
+        "relatedEntityId": { "type": "string", "maxLength": 128 },
+        "relatedEntityCode": { "type": "string", "maxLength": 40 },
+        "customerName": { "type": "string", "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "dueDate": { "type": "string", "minLength": 4, "maxLength": 30 },
+        "reminderTime": { "type": "string", "maxLength": 20 },
+        "priority": { "type": "string", "enum": ["Low", "Medium", "High", "Urgent"] },
+        "status": { "type": "string", "enum": ["Pending", "Completed"] },
+        "assignedToUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "assignedToName": { "type": "string", "maxLength": 120 },
+        "notes": { "type": "string", "maxLength": 1500 },
+        "history": { "type": "array" },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "dueDate", "priority", "status", "assignedToUid", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification alert",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "category": { "type": "string", "enum": ["Enquiry", "Follow-up", "Booking", "Payment", "Departure", "Cancellation", "Task"] },
+        "targetUid": { "type": "string", "maxLength": 128 },
+        "isRead": { "type": "boolean" },
+        "linkModule": { "type": "string", "maxLength": 40 },
+        "createdByUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "category", "isRead", "createdByUid", "createdAt"]
+    },
+    "WhatsAppTemplate": {
+      "title": "WhatsAppTemplate",
+      "description": "Predefined WhatsApp message template",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": { "type": "string", "enum": ["Enquiry Response", "Follow-up", "Quotation Sharing", "Booking Confirmation", "Payment Reminder", "Tour Reminder"] },
+        "body": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "body", "updatedAt"]
+    },
+    "CompanySettings": {
+      "title": "CompanySettings",
+      "description": "Agency company profile, GST, invoice, and integration settings",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "minLength": 1, "maxLength": 150 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "logoUrl": { "type": "string", "maxLength": 500 },
+        "gstNumber": { "type": "string", "maxLength": 40 },
+        "defaultGstPercent": { "type": "number" },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "website": { "type": "string", "maxLength": 200 },
+        "address": { "type": "string", "maxLength": 400 },
+        "invoicePrefix": { "type": "string", "maxLength": 20 },
+        "quotePrefix": { "type": "string", "maxLength": 20 },
+        "bookingPrefix": { "type": "string", "maxLength": 20 },
+        "bankDetails": { "type": "string", "maxLength": 1000 },
+        "upiId": { "type": "string", "maxLength": 100 },
+        "quotationTerms": { "type": "string", "maxLength": 4000 },
+        "invoiceTerms": { "type": "string", "maxLength": 4000 },
+        "whatsappConfig": { "type": "object" },
+        "notificationPrefs": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "defaultGstPercent", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "CRM employee records and module permissions"
+    },
+    "/employee_invites/{inviteEmail}": {
+      "schema": { "$ref": "#/entities/EmployeeInvite" },
+      "description": "Pending role invitations for employees"
+    },
+    "/enquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/Enquiry" },
+      "description": "Customer travel enquiries"
+    },
+    "/enquiries/{enquiryId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/EnquiryActivity" },
+      "description": "Communication history and internal notes for an enquiry"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer profiles and lifetime totals"
+    },
+    "/packages/{packageId}": {
+      "schema": { "$ref": "#/entities/TourPackage" },
+      "description": "Tour package catalog"
+    },
+    "/quotations/{quotationId}": {
+      "schema": { "$ref": "#/entities/Quotation" },
+      "description": "Travel quotations"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Confirmed and pending tour bookings"
+    },
+    "/hotels/{hotelId}": {
+      "schema": { "$ref": "#/entities/Hotel" },
+      "description": "Hotel partner database"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": { "$ref": "#/entities/Vehicle" },
+      "description": "Fleet and vehicle management"
+    },
+    "/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Customer payment collections and refunds"
+    },
+    "/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Supplier payments and agency expenses"
+    },
+    "/followups/{followUpId}": {
+      "schema": { "$ref": "#/entities/FollowUp" },
+      "description": "Follow-up tasks and reminders"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "In-app notifications"
+    },
+    "/whatsapp_templates/{templateId}": {
+      "schema": { "$ref": "#/entities/WhatsAppTemplate" },
+      "description": "WhatsApp message templates"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/CompanySettings" },
+      "description": "Agency company profile and operational settings"
+    }
+  }
+}

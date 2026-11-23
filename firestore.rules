@@ -1,0 +1,722 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ==================== Global Hardened Primitives ====================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmailId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 160;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrappedSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'barnabassherpa@gmail.com';
+    }
+
+    function employeeDocPath(uid) {
+      return /databases/$(database)/documents/employees/$(uid);
+    }
+
+    function isActiveEmployee() {
+      return isSignedIn()
+        && exists(employeeDocPath(request.auth.uid))
+        && get(employeeDocPath(request.auth.uid)).data.status == 'Active';
+    }
+
+    function employeeRole() {
+      return get(employeeDocPath(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isBootstrappedSuperAdmin()
+        || (isActiveEmployee() && (employeeRole() == 'Super Admin' || employeeRole() == 'Admin'));
+    }
+
+    function isManagerOrAdmin() {
+      return isBootstrappedSuperAdmin()
+        || (isActiveEmployee() && employeeRole() in ['Super Admin', 'Admin', 'Sales Manager', 'Operations Manager', 'Accounts Manager']);
+    }
+
+    function isOptString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptNumber(data, field) {
+      return !(field in data) || (data[field] is number || data[field] is int || data[field] is float);
+    }
+
+    function isNonNegNumber(val) {
+      return (val is number || val is int || val is float) && val >= 0;
+    }
+
+    function isStringList(data, field, maxLen) {
+      return !(field in data) || (
+        data[field] is list
+        && data[field].size() <= maxLen
+        && (data[field].size() == 0 || data[field][0] is string)
+      );
+    }
+
+    function isMapList(data, field, maxLen) {
+      return !(field in data) || (
+        data[field] is list
+        && data[field].size() <= maxLen
+        && (data[field].size() == 0 || data[field][0] is map)
+      );
+    }
+
+    // ==================== Validation Blueprints ====================
+
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'status', 'permissions', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'role', 'department', 'status', 'permissions', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && isOptString(data, 'phone', 30)
+        && isOptString(data, 'department', 60)
+        && data.role in ['Super Admin', 'Admin', 'Sales Manager', 'Sales Executive', 'Operations Manager', 'Accounts Manager', 'Customer Support']
+        && data.status in ['Active', 'Inactive']
+        && data.permissions is map
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvite(data) {
+      return data.keys().hasAll(['email', 'name', 'role', 'permissions', 'invitedByUid', 'createdAt'])
+        && data.keys().hasOnly(['email', 'name', 'phone', 'role', 'department', 'permissions', 'invitedByUid', 'createdAt'])
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && isOptString(data, 'phone', 30)
+        && isOptString(data, 'department', 60)
+        && data.role in ['Super Admin', 'Admin', 'Sales Manager', 'Sales Executive', 'Operations Manager', 'Accounts Manager', 'Customer Support']
+        && data.permissions is map
+        && isValidId(data.invitedByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidEnquiry(data) {
+      return data.keys().hasAll(['enquiryCode', 'customerName', 'mobile', 'source', 'destination', 'adults', 'hotelCategory', 'budget', 'assignedToUid', 'enquiryDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['enquiryCode', 'customerId', 'customerName', 'mobile', 'whatsapp', 'email', 'source', 'destination', 'startDate', 'endDate', 'adults', 'children', 'infants', 'rooms', 'hotelCategory', 'budget', 'preferredVehicle', 'specialRequirements', 'assignedToUid', 'assignedToName', 'enquiryDate', 'followUpDate', 'status', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.enquiryCode is string && data.enquiryCode.size() >= 3 && data.enquiryCode.size() <= 40
+        && isOptString(data, 'customerId', 128)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && data.mobile is string && data.mobile.size() >= 5 && data.mobile.size() <= 30
+        && isOptString(data, 'whatsapp', 30)
+        && isOptString(data, 'email', 160)
+        && data.source in ['Website', 'Facebook', 'Instagram', 'Google', 'Referral', 'Justdial', 'Tour Travel World', 'Walk-in', 'Other']
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && isOptString(data, 'startDate', 30)
+        && isOptString(data, 'endDate', 30)
+        && isNonNegNumber(data.adults)
+        && isOptNumber(data, 'children')
+        && isOptNumber(data, 'infants')
+        && isOptNumber(data, 'rooms')
+        && data.hotelCategory in ['Standard', 'Deluxe', 'Premium', 'Luxury']
+        && isNonNegNumber(data.budget)
+        && isOptString(data, 'preferredVehicle', 80)
+        && isOptString(data, 'specialRequirements', 2000)
+        && isValidId(data.assignedToUid)
+        && isOptString(data, 'assignedToName', 120)
+        && data.enquiryDate is string && data.enquiryDate.size() <= 30
+        && isOptString(data, 'followUpDate', 30)
+        && data.status in ['New Enquiry', 'Contacted', 'Follow-up Required', 'Quotation Sent', 'Negotiation', 'Booking Confirmed', 'Lost', 'Cancelled']
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEnquiryActivity(data) {
+      return data.keys().hasAll(['type', 'content', 'authorUid', 'authorName', 'createdAt'])
+        && data.keys().hasOnly(['type', 'content', 'authorUid', 'authorName', 'createdAt'])
+        && data.type in ['Note', 'Call', 'WhatsApp', 'Email', 'Status Change', 'Quotation']
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 2000
+        && isValidId(data.authorUid)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 120
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['customerCode', 'name', 'mobile', 'totalBookings', 'totalSpent', 'outstandingBalance', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['customerCode', 'name', 'mobile', 'whatsapp', 'email', 'address', 'city', 'preferences', 'specialRequests', 'internalRemarks', 'documents', 'totalBookings', 'totalSpent', 'outstandingBalance', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.customerCode is string && data.customerCode.size() >= 3 && data.customerCode.size() <= 40
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.mobile is string && data.mobile.size() >= 5 && data.mobile.size() <= 30
+        && isOptString(data, 'whatsapp', 30)
+        && isOptString(data, 'email', 160)
+        && isOptString(data, 'address', 300)
+        && isOptString(data, 'city', 100)
+        && isOptString(data, 'preferences', 1000)
+        && isOptString(data, 'specialRequests', 1000)
+        && isOptString(data, 'internalRemarks', 1500)
+        && isMapList(data, 'documents', 20)
+        && isNonNegNumber(data.totalBookings)
+        && isNonNegNumber(data.totalSpent)
+        && isNonNegNumber(data.outstandingBalance)
+        && isValidId(data.assignedToUid)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPackage(data) {
+      return data.keys().hasAll(['packageCode', 'name', 'destination', 'days', 'nights', 'price', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['packageCode', 'name', 'destination', 'days', 'nights', 'description', 'highlights', 'itinerary', 'hotelDetails', 'vehicleDetails', 'inclusions', 'exclusions', 'price', 'childPrice', 'seasonalPrice', 'imageUrl', 'termsAndConditions', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.packageCode is string && data.packageCode.size() >= 3 && data.packageCode.size() <= 40
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 150
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && isNonNegNumber(data.days)
+        && isNonNegNumber(data.nights)
+        && isOptString(data, 'description', 3000)
+        && isStringList(data, 'highlights', 20)
+        && isMapList(data, 'itinerary', 30)
+        && isOptString(data, 'hotelDetails', 1000)
+        && isOptString(data, 'vehicleDetails', 1000)
+        && isOptString(data, 'inclusions', 2000)
+        && isOptString(data, 'exclusions', 2000)
+        && isNonNegNumber(data.price)
+        && isOptNumber(data, 'childPrice')
+        && isOptNumber(data, 'seasonalPrice')
+        && isOptString(data, 'imageUrl', 500)
+        && isOptString(data, 'termsAndConditions', 3000)
+        && data.isActive is bool
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQuotation(data) {
+      return data.keys().hasAll(['quoteCode', 'version', 'customerName', 'destination', 'subtotal', 'totalCost', 'status', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['quoteCode', 'version', 'enquiryId', 'customerId', 'customerName', 'customerEmail', 'customerPhone', 'destination', 'startDate', 'endDate', 'paxSummary', 'hotelItems', 'transportItems', 'sightseeingCharge', 'mealsCharge', 'otherExpenses', 'subtotal', 'markupPercent', 'markupAmount', 'discountAmount', 'gstPercent', 'gstAmount', 'totalCost', 'inclusions', 'exclusions', 'termsAndConditions', 'status', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.quoteCode is string && data.quoteCode.size() >= 3 && data.quoteCode.size() <= 40
+        && isNonNegNumber(data.version)
+        && isOptString(data, 'enquiryId', 128)
+        && isOptString(data, 'customerId', 128)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && isOptString(data, 'customerEmail', 160)
+        && isOptString(data, 'customerPhone', 30)
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && isOptString(data, 'startDate', 30)
+        && isOptString(data, 'endDate', 30)
+        && isOptString(data, 'paxSummary', 120)
+        && isMapList(data, 'hotelItems', 20)
+        && isMapList(data, 'transportItems', 20)
+        && isOptNumber(data, 'sightseeingCharge')
+        && isOptNumber(data, 'mealsCharge')
+        && isOptNumber(data, 'otherExpenses')
+        && isNonNegNumber(data.subtotal)
+        && isOptNumber(data, 'markupPercent')
+        && isOptNumber(data, 'markupAmount')
+        && isOptNumber(data, 'discountAmount')
+        && isOptNumber(data, 'gstPercent')
+        && isOptNumber(data, 'gstAmount')
+        && isNonNegNumber(data.totalCost)
+        && isOptString(data, 'inclusions', 2000)
+        && isOptString(data, 'exclusions', 2000)
+        && isOptString(data, 'termsAndConditions', 3000)
+        && data.status in ['Draft', 'Sent', 'Viewed', 'Revised', 'Accepted', 'Rejected']
+        && isValidId(data.assignedToUid)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['bookingCode', 'customerName', 'destination', 'startDate', 'endDate', 'adults', 'bookingAmount', 'advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['bookingCode', 'enquiryId', 'quotationId', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'destination', 'startDate', 'endDate', 'adults', 'children', 'infants', 'packageId', 'packageName', 'hotelId', 'hotelName', 'vehicleId', 'vehicleDetails', 'bookingAmount', 'advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'operationsManagerUid', 'operationsManagerName', 'assignedToUid', 'specialNotes', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.bookingCode is string && data.bookingCode.size() >= 3 && data.bookingCode.size() <= 40
+        && isOptString(data, 'enquiryId', 128)
+        && isOptString(data, 'quotationId', 128)
+        && isOptString(data, 'customerId', 128)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && isOptString(data, 'customerPhone', 30)
+        && isOptString(data, 'customerEmail', 160)
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && data.startDate is string && data.startDate.size() >= 4 && data.startDate.size() <= 30
+        && data.endDate is string && data.endDate.size() >= 4 && data.endDate.size() <= 30
+        && isNonNegNumber(data.adults)
+        && isOptNumber(data, 'children')
+        && isOptNumber(data, 'infants')
+        && isOptString(data, 'packageId', 128)
+        && isOptString(data, 'packageName', 150)
+        && isOptString(data, 'hotelId', 128)
+        && isOptString(data, 'hotelName', 150)
+        && isOptString(data, 'vehicleId', 128)
+        && isOptString(data, 'vehicleDetails', 200)
+        && isNonNegNumber(data.bookingAmount)
+        && isNonNegNumber(data.advanceReceived)
+        && isNonNegNumber(data.remainingAmount)
+        && data.paymentStatus in ['Unpaid', 'Partial', 'Paid', 'Refunded']
+        && data.bookingStatus in ['Pending', 'Confirmed', 'In Progress', 'Completed', 'Cancelled']
+        && isOptString(data, 'operationsManagerUid', 128)
+        && isOptString(data, 'operationsManagerName', 120)
+        && isValidId(data.assignedToUid)
+        && isOptString(data, 'specialNotes', 2000)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidHotel(data) {
+      return data.keys().hasAll(['name', 'destination', 'category', 'contractRate', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'destination', 'address', 'contactPerson', 'phone', 'email', 'category', 'roomTypes', 'mealPlans', 'contractRate', 'seasonalRate', 'checkInTime', 'checkOutTime', 'policies', 'notes', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 150
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && isOptString(data, 'address', 300)
+        && isOptString(data, 'contactPerson', 120)
+        && isOptString(data, 'phone', 30)
+        && isOptString(data, 'email', 160)
+        && data.category in ['Standard', 'Deluxe', 'Premium', 'Luxury']
+        && isStringList(data, 'roomTypes', 15)
+        && isStringList(data, 'mealPlans', 10)
+        && isNonNegNumber(data.contractRate)
+        && isOptNumber(data, 'seasonalRate')
+        && isOptString(data, 'checkInTime', 30)
+        && isOptString(data, 'checkOutTime', 30)
+        && isOptString(data, 'policies', 2000)
+        && isOptString(data, 'notes', 1500)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidVehicle(data) {
+      return data.keys().hasAll(['registrationNumber', 'category', 'model', 'seatingCapacity', 'perDayRate', 'availability', 'maintenanceStatus', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['registrationNumber', 'category', 'model', 'seatingCapacity', 'driverName', 'driverPhone', 'vendorDetails', 'perDayRate', 'perKmRate', 'availability', 'assignedBookingCode', 'maintenanceStatus', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.registrationNumber is string && data.registrationNumber.size() >= 2 && data.registrationNumber.size() <= 40
+        && data.category in ['Hatchback', 'Sedan', 'SUV', 'Innova', 'Crysta', 'Tempo Traveller', 'Luxury Vehicles']
+        && data.model is string && data.model.size() >= 1 && data.model.size() <= 120
+        && isNonNegNumber(data.seatingCapacity)
+        && isOptString(data, 'driverName', 120)
+        && isOptString(data, 'driverPhone', 30)
+        && isOptString(data, 'vendorDetails', 200)
+        && isNonNegNumber(data.perDayRate)
+        && isOptNumber(data, 'perKmRate')
+        && data.availability in ['Available', 'On Trip', 'Reserved', 'Maintenance']
+        && isOptString(data, 'assignedBookingCode', 40)
+        && data.maintenanceStatus in ['Good', 'Due Soon', 'In Service']
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['receiptCode', 'type', 'bookingId', 'customerName', 'amount', 'mode', 'paymentDate', 'recordedByUid', 'createdAt'])
+        && data.keys().hasOnly(['receiptCode', 'type', 'bookingId', 'bookingCode', 'customerId', 'customerName', 'amount', 'gstComponent', 'mode', 'referenceNumber', 'paymentDate', 'notes', 'recordedByUid', 'createdAt'])
+        && data.receiptCode is string && data.receiptCode.size() >= 3 && data.receiptCode.size() <= 40
+        && data.type in ['Customer Collection', 'Refund']
+        && isValidId(data.bookingId)
+        && isOptString(data, 'bookingCode', 40)
+        && isOptString(data, 'customerId', 128)
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && isNonNegNumber(data.amount)
+        && isOptNumber(data, 'gstComponent')
+        && data.mode in ['Cash', 'UPI', 'Bank Transfer', 'Credit/Debit Card', 'Payment Gateway']
+        && isOptString(data, 'referenceNumber', 100)
+        && data.paymentDate is string && data.paymentDate.size() <= 30
+        && isOptString(data, 'notes', 1000)
+        && isValidId(data.recordedByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['expenseCode', 'category', 'vendorName', 'amount', 'paidAmount', 'pendingAmount', 'status', 'recordedByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['expenseCode', 'category', 'vendorName', 'bookingCode', 'amount', 'paidAmount', 'pendingAmount', 'mode', 'status', 'dueDate', 'notes', 'recordedByUid', 'createdAt', 'updatedAt'])
+        && data.expenseCode is string && data.expenseCode.size() >= 3 && data.expenseCode.size() <= 40
+        && data.category in ['Hotel Payment', 'Transport Payment', 'Sightseeing/Vendor', 'Office/Marketing', 'Other']
+        && data.vendorName is string && data.vendorName.size() >= 1 && data.vendorName.size() <= 150
+        && isOptString(data, 'bookingCode', 40)
+        && isNonNegNumber(data.amount)
+        && isNonNegNumber(data.paidAmount)
+        && isNonNegNumber(data.pendingAmount)
+        && (!('mode' in data) || data.mode in ['Cash', 'UPI', 'Bank Transfer', 'Credit/Debit Card', 'Payment Gateway'])
+        && data.status in ['Pending', 'Partial', 'Paid']
+        && isOptString(data, 'dueDate', 30)
+        && isOptString(data, 'notes', 1000)
+        && isValidId(data.recordedByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFollowUp(data) {
+      return data.keys().hasAll(['title', 'type', 'dueDate', 'priority', 'status', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'type', 'relatedEntityType', 'relatedEntityId', 'relatedEntityCode', 'customerName', 'customerPhone', 'dueDate', 'reminderTime', 'priority', 'status', 'assignedToUid', 'assignedToName', 'notes', 'history', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.type in ['Enquiry Follow-up', 'Payment Reminder', 'Pre-Tour Check', 'Post-Tour Feedback', 'Internal Task']
+        && (!('relatedEntityType' in data) || data.relatedEntityType in ['enquiry', 'booking', 'customer', 'general'])
+        && isOptString(data, 'relatedEntityId', 128)
+        && isOptString(data, 'relatedEntityCode', 40)
+        && isOptString(data, 'customerName', 120)
+        && isOptString(data, 'customerPhone', 30)
+        && data.dueDate is string && data.dueDate.size() >= 4 && data.dueDate.size() <= 30
+        && isOptString(data, 'reminderTime', 20)
+        && data.priority in ['Low', 'Medium', 'High', 'Urgent']
+        && data.status in ['Pending', 'Completed']
+        && isValidId(data.assignedToUid)
+        && isOptString(data, 'assignedToName', 120)
+        && isOptString(data, 'notes', 1500)
+        && isMapList(data, 'history', 30)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['title', 'message', 'category', 'isRead', 'createdByUid', 'createdAt'])
+        && data.keys().hasOnly(['title', 'message', 'category', 'targetUid', 'isRead', 'linkModule', 'createdByUid', 'createdAt'])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 150
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 500
+        && data.category in ['Enquiry', 'Follow-up', 'Booking', 'Payment', 'Departure', 'Cancellation', 'Task']
+        && isOptString(data, 'targetUid', 128)
+        && data.isRead is bool
+        && isOptString(data, 'linkModule', 40)
+        && isValidId(data.createdByUid)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWhatsAppTemplate(data) {
+      return data.keys().hasAll(['name', 'category', 'body', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'category', 'body', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.category in ['Enquiry Response', 'Follow-up', 'Quotation Sharing', 'Booking Confirmation', 'Payment Reminder', 'Tour Reminder']
+        && data.body is string && data.body.size() >= 1 && data.body.size() <= 2000
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCompanySettings(data) {
+      return data.keys().hasAll(['companyName', 'defaultGstPercent', 'updatedAt'])
+        && data.keys().hasOnly(['companyName', 'tagline', 'logoUrl', 'gstNumber', 'defaultGstPercent', 'email', 'phone', 'website', 'address', 'invoicePrefix', 'quotePrefix', 'bookingPrefix', 'bankDetails', 'upiId', 'quotationTerms', 'invoiceTerms', 'whatsappConfig', 'notificationPrefs', 'updatedAt'])
+        && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 150
+        && isOptString(data, 'tagline', 200)
+        && isOptString(data, 'logoUrl', 500)
+        && isOptString(data, 'gstNumber', 40)
+        && isNonNegNumber(data.defaultGstPercent)
+        && isOptString(data, 'email', 160)
+        && isOptString(data, 'phone', 40)
+        && isOptString(data, 'website', 200)
+        && isOptString(data, 'address', 400)
+        && isOptString(data, 'invoicePrefix', 20)
+        && isOptString(data, 'quotePrefix', 20)
+        && isOptString(data, 'bookingPrefix', 20)
+        && isOptString(data, 'bankDetails', 1000)
+        && isOptString(data, 'upiId', 100)
+        && isOptString(data, 'quotationTerms', 4000)
+        && isOptString(data, 'invoiceTerms', 4000)
+        && (!('whatsappConfig' in data) || data.whatsappConfig is map)
+        && (!('notificationPrefs' in data) || data.notificationPrefs is map)
+        && data.updatedAt is timestamp;
+    }
+
+    // ==================== Collection Rules ====================
+
+    // Connection test endpoint
+    match /test/{docId} {
+      allow get: if isValidId(docId) && isSignedIn();
+    }
+
+    // Employees
+    match /employees/{employeeId} {
+      allow get: if isValidId(employeeId) && isSignedIn() && (request.auth.uid == employeeId || isActiveEmployee() || isBootstrappedSuperAdmin());
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isSignedIn() && existing().uid == request.auth.uid);
+      allow create: if isValidId(employeeId) && isSignedIn() && isValidEmployee(incoming())
+        && incoming().uid == employeeId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            request.auth.uid == employeeId
+            && exists(/databases/$(database)/documents/employee_invites/$(request.auth.token.email))
+            && incoming().role == get(/databases/$(database)/documents/employee_invites/$(request.auth.token.email)).data.role
+            && incoming().permissions == get(/databases/$(database)/documents/employee_invites/$(request.auth.token.email)).data.permissions
+            && incoming().status == 'Active'
+          )
+        );
+      allow update: if isValidId(employeeId) && isSignedIn() && isValidEmployee(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            request.auth.uid == employeeId
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'department', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(employeeId) && isAdmin() && employeeId != request.auth.uid;
+    }
+
+    // Employee Invites
+    match /employee_invites/{inviteEmail} {
+      allow get: if isValidEmailId(inviteEmail) && isSignedIn() && (isAdmin() || request.auth.token.email == inviteEmail);
+      allow list: if isBootstrappedSuperAdmin() || isAdmin() || (isSignedIn() && existing().email == request.auth.token.email);
+      allow create: if isValidEmailId(inviteEmail) && isAdmin() && isValidInvite(incoming())
+        && incoming().invitedByUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidEmailId(inviteEmail) && isAdmin() && isValidInvite(incoming())
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidEmailId(inviteEmail) && isSignedIn() && (isAdmin() || request.auth.token.email == inviteEmail);
+    }
+
+    // Enquiries
+    match /enquiries/{enquiryId} {
+      allow get: if isValidId(enquiryId) && (isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid));
+      allow create: if isValidId(enquiryId) && (isAdmin() || isActiveEmployee()) && isValidEnquiry(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(enquiryId) && isSignedIn() && isValidEnquiry(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && !(existing().status in ['Booking Confirmed', 'Lost', 'Cancelled'])
+            && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['customerName', 'mobile', 'whatsapp', 'email', 'source', 'destination', 'startDate', 'endDate', 'adults', 'children', 'infants', 'rooms', 'hotelCategory', 'budget', 'preferredVehicle', 'specialRequirements', 'followUpDate', 'status', 'customerId', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(enquiryId) && isAdmin();
+
+      // Master Gate Subcollection: Enquiry Activities
+      match /activities/{activityId} {
+        allow get: if isValidId(enquiryId) && isValidId(activityId)
+          && exists(/databases/$(database)/documents/enquiries/$(enquiryId))
+          && (isManagerOrAdmin() || (isActiveEmployee() && (
+            get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.assignedToUid == request.auth.uid
+            || get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.createdByUid == request.auth.uid
+          )));
+        allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().authorUid == request.auth.uid);
+        allow create: if isValidId(enquiryId) && isValidId(activityId)
+          && (isAdmin() || isActiveEmployee())
+          && exists(/databases/$(database)/documents/enquiries/$(enquiryId))
+          && isValidEnquiryActivity(incoming())
+          && incoming().authorUid == request.auth.uid
+          && incoming().createdAt == request.time;
+        allow delete: if isValidId(enquiryId) && isValidId(activityId) && isAdmin();
+      }
+    }
+
+    // Customers
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && (isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid));
+      allow create: if isValidId(customerId) && (isAdmin() || isActiveEmployee()) && isValidCustomer(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(customerId) && isSignedIn() && isValidCustomer(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'mobile', 'whatsapp', 'email', 'address', 'city', 'preferences', 'specialRequests', 'internalRemarks', 'documents', 'totalBookings', 'totalSpent', 'outstandingBalance', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(customerId) && isAdmin();
+    }
+
+    // Tour Packages
+    match /packages/{packageId} {
+      allow get: if isValidId(packageId) && (isAdmin() || isActiveEmployee());
+      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && (existing().isActive == true || existing().createdByUid == request.auth.uid));
+      allow create: if isValidId(packageId) && isManagerOrAdmin() && isValidPackage(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(packageId) && isManagerOrAdmin() && isValidPackage(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(packageId) && isAdmin();
+    }
+
+    // Quotations
+    match /quotations/{quotationId} {
+      allow get: if isValidId(quotationId) && (isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid));
+      allow create: if isValidId(quotationId) && (isAdmin() || isActiveEmployee()) && isValidQuotation(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(quotationId) && isSignedIn() && isValidQuotation(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && !(existing().status in ['Accepted', 'Rejected'])
+            && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
+          )
+        );
+      allow delete: if isValidId(quotationId) && isAdmin();
+    }
+
+    // Bookings
+    match /bookings/{bookingId} {
+      allow get: if isValidId(bookingId) && (isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid || existing().operationsManagerUid == request.auth.uid)));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid || existing().operationsManagerUid == request.auth.uid));
+      allow create: if isValidId(bookingId) && (isAdmin() || isActiveEmployee()) && isValidBooking(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(bookingId) && isSignedIn() && isValidBooking(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && !(existing().bookingStatus in ['Completed', 'Cancelled'])
+            && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'hotelId', 'hotelName', 'vehicleId', 'vehicleDetails', 'specialNotes', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(bookingId) && isAdmin();
+    }
+
+    // Hotels
+    match /hotels/{hotelId} {
+      allow get: if isValidId(hotelId) && (isAdmin() || isActiveEmployee());
+      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().category in ['Standard', 'Deluxe', 'Premium', 'Luxury']);
+      allow create: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(hotelId) && isAdmin();
+    }
+
+    // Vehicles
+    match /vehicles/{vehicleId} {
+      allow get: if isValidId(vehicleId) && (isAdmin() || isActiveEmployee());
+      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().availability in ['Available', 'On Trip', 'Reserved', 'Maintenance']);
+      allow create: if isValidId(vehicleId) && isManagerOrAdmin() && isValidVehicle(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(vehicleId) && isManagerOrAdmin() && isValidVehicle(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(vehicleId) && isAdmin();
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow get: if isValidId(paymentId) && (isManagerOrAdmin() || (isActiveEmployee() && existing().recordedByUid == request.auth.uid));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().recordedByUid == request.auth.uid);
+      allow create: if isValidId(paymentId) && (isAdmin() || isActiveEmployee()) && isValidPayment(incoming())
+        && exists(/databases/$(database)/documents/bookings/$(incoming().bookingId))
+        && incoming().recordedByUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(paymentId) && isAdmin() && isValidPayment(incoming())
+        && incoming().recordedByUid == existing().recordedByUid
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(paymentId) && isAdmin();
+    }
+
+    // Expenses
+    match /expenses/{expenseId} {
+      allow get: if isValidId(expenseId) && (isManagerOrAdmin() || (isActiveEmployee() && existing().recordedByUid == request.auth.uid));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().recordedByUid == request.auth.uid);
+      allow create: if isValidId(expenseId) && isManagerOrAdmin() && isValidExpense(incoming())
+        && incoming().recordedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(expenseId) && isManagerOrAdmin() && isValidExpense(incoming())
+        && incoming().recordedByUid == existing().recordedByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(expenseId) && isAdmin();
+    }
+
+    // Follow-ups
+    match /followups/{followUpId} {
+      allow get: if isValidId(followUpId) && (isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid));
+      allow create: if isValidId(followUpId) && (isAdmin() || isActiveEmployee()) && isValidFollowUp(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(followUpId) && isSignedIn() && isValidFollowUp(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isManagerOrAdmin()
+          || (
+            isActiveEmployee()
+            && existing().status != 'Completed'
+            && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'notes', 'history', 'dueDate', 'reminderTime', 'priority', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(followUpId) && isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && (isAdmin() || (isActiveEmployee() && (existing().targetUid == request.auth.uid || existing().createdByUid == request.auth.uid || existing().targetUid == 'all')));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().targetUid == request.auth.uid || existing().createdByUid == request.auth.uid || existing().targetUid == 'all'));
+      allow create: if isValidId(notificationId) && (isAdmin() || isActiveEmployee()) && isValidNotification(incoming())
+        && incoming().createdByUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(notificationId) && isSignedIn() && isValidNotification(incoming())
+        && incoming().createdByUid == existing().createdByUid
+        && incoming().createdAt == existing().createdAt
+        && (isAdmin() || (isActiveEmployee() && incoming().diff(existing()).affectedKeys().hasOnly(['isRead'])));
+      allow delete: if isValidId(notificationId) && isAdmin();
+    }
+
+    // WhatsApp Templates
+    match /whatsapp_templates/{templateId} {
+      allow get: if isValidId(templateId) && (isAdmin() || isActiveEmployee());
+      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().category in ['Enquiry Response', 'Follow-up', 'Quotation Sharing', 'Booking Confirmation', 'Payment Reminder', 'Tour Reminder']);
+      allow create, update: if isValidId(templateId) && isAdmin() && isValidWhatsAppTemplate(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(templateId) && isAdmin();
+    }
+
+    // Company Settings
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && (isAdmin() || isActiveEmployee());
+      allow list: if isBootstrappedSuperAdmin();
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidCompanySettings(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+  }
+}
