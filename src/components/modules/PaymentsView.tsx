@@ -63,6 +63,9 @@ export const PaymentsView: React.FC = () => {
     const customerOutstanding = bookings
       .filter((b) => b.bookingStatus !== 'Cancelled')
       .reduce((s, b) => s + Number(b.remainingAmount || 0), 0);
+    const bookingAdvances = bookings
+      .filter((b) => b.bookingStatus !== 'Cancelled')
+      .reduce((s, b) => s + Number(b.advanceReceived || 0), 0);
     const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     const pendingSupplier = expenses.reduce((s, e) => s + Number(e.pendingAmount || 0), 0);
     const netProfit = collections - refunds - totalExpenses;
@@ -72,6 +75,7 @@ export const PaymentsView: React.FC = () => {
       refunds,
       gstCollected,
       customerOutstanding,
+      bookingAdvances,
       totalExpenses,
       pendingSupplier,
       netProfit,
@@ -131,40 +135,42 @@ export const PaymentsView: React.FC = () => {
       {/* Financial KPI Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-          <div className="text-xs text-slate-500">Customer Collections</div>
-          <div className="mt-1 text-lg font-bold font-mono tabular-nums text-emerald-600 dark:text-emerald-400">
+          <div className="text-xs text-slate-500">Total Received (INR)</div>
+          <div className="mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words text-emerald-600 dark:text-emerald-400">
             {formatCurrency(summary.collections)}
           </div>
-          <div className="text-[11px] text-slate-400 tabular-nums">GST: {formatCurrency(summary.gstCollected)}</div>
+          <div className="text-[11px] text-slate-400 tabular-nums">
+            Booking Advances: {formatCurrency(summary.bookingAdvances)} · GST: {formatCurrency(summary.gstCollected)}
+          </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-          <div className="text-xs text-slate-500">Customer Outstanding</div>
-          <div className="mt-1 text-lg font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">
+          <div className="text-xs text-slate-500">Pending Collection</div>
+          <div className="mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words text-amber-600 dark:text-amber-400">
             {formatCurrency(summary.customerOutstanding)}
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-500">Refunds Issued</div>
-          <div className="mt-1 text-lg font-bold font-mono tabular-nums text-red-600 dark:text-red-400">
+          <div className="mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words text-red-600 dark:text-red-400">
             {formatCurrency(summary.refunds)}
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-500">Supplier & OpEx</div>
-          <div className="mt-1 text-lg font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
+          <div className="mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words text-slate-900 dark:text-slate-100">
             {formatCurrency(summary.totalExpenses)}
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-500">Pending Payables</div>
-          <div className="mt-1 text-lg font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">
+          <div className="mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words text-amber-600 dark:text-amber-400">
             {formatCurrency(summary.pendingSupplier)}
           </div>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-500">Net Cash P&L</div>
           <div
-            className={`mt-1 text-lg font-bold font-mono tabular-nums ${
+            className={`mt-1 text-base xl:text-lg font-bold font-mono tabular-nums break-words ${
               summary.netProfit >= 0 ? 'text-teal-600 dark:text-teal-400' : 'text-red-600'
             }`}
           >
@@ -448,7 +454,7 @@ export const PaymentsView: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1">Amount (INR) *</label>
+                  <label className="block text-xs font-medium mb-1">Amount (₹ INR) *</label>
                   <input
                     required
                     type="number"
@@ -567,7 +573,7 @@ export const PaymentsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Total Amount (INR) *</label>
+                  <label className="block text-xs font-medium mb-1">Total Amount (₹ INR) *</label>
                   <input
                     required
                     type="number"
@@ -578,7 +584,7 @@ export const PaymentsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Paid Amount (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Paid Amount (₹ INR)</label>
                   <input
                     type="number"
                     min={0}

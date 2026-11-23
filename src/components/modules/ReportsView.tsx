@@ -195,8 +195,8 @@ export const ReportsView: React.FC = () => {
             'Departure',
             'Booking Status',
             'Payment Status',
-            'Total Value',
-            'Balance Due',
+            'Total Value (INR)',
+            'Balance Due (INR)',
           ],
           rows: list.map((b) => [
             b.bookingCode,
@@ -359,14 +359,14 @@ export const ReportsView: React.FC = () => {
           .filter((p) => p.type === 'Customer Collection')
           .reduce((s, p) => s + Number(p.gstComponent || 0), 0);
         return {
-          title: 'Revenue & Receipts Report',
-          subtitle: `${list.length} payment transactions`,
+          title: 'Revenue & Receipts Report (INR)',
+          subtitle: `${list.length} payment transactions · All figures in INR (₹)`,
           kpis: [
-            { label: 'Gross Collections', value: formatCurrency(collected) },
-            { label: 'Refunds Issued', value: formatCurrency(refunded) },
+            { label: 'Gross Collections (INR)', value: formatCurrency(collected) },
+            { label: 'Refunds Issued (INR)', value: formatCurrency(refunded) },
             { label: 'Net Receipts (GST Incl.)', value: `${formatCurrency(collected - refunded)} (${formatCurrency(gstTotal)} GST)` },
           ],
-          headers: ['Receipt Code', 'Date', 'Type', 'Customer', 'Booking Ref', 'Mode', 'GST', 'Amount'],
+          headers: ['Receipt Code', 'Date', 'Type', 'Customer', 'Booking Ref', 'Mode', 'GST (INR)', 'Amount (INR)'],
           rows: list.map((p) => [
             p.receiptCode,
             formatDate(p.paymentDate),
@@ -438,14 +438,14 @@ export const ReportsView: React.FC = () => {
         ];
 
         return {
-          title: 'Profit & Loss Statement',
-          subtitle: 'Accrual revenue vs supplier & operational expenses',
+          title: 'Profit & Loss Statement (INR)',
+          subtitle: 'Accrual revenue vs supplier & operational expenses · All figures in INR (₹)',
           kpis: [
-            { label: 'Net Revenue', value: formatCurrency(netRevenue) },
-            { label: 'Total Expenses', value: formatCurrency(totalSupplierCost) },
+            { label: 'Net Revenue (INR)', value: formatCurrency(netRevenue) },
+            { label: 'Total Expenses (INR)', value: formatCurrency(totalSupplierCost) },
             { label: 'Net Profit / (Loss)', value: formatCurrency(netProfit) },
           ],
-          headers: ['Line Item', 'Classification', 'Amount'],
+          headers: ['Line Item', 'Classification', 'Amount (INR)'],
           rows: breakdown.map((b) => [b.item, b.category, formatCurrency(b.amt)]),
           rawRows: breakdown.map((b) => [b.item, b.category, b.amt]),
         };
@@ -477,9 +477,9 @@ export const ReportsView: React.FC = () => {
             'Phone',
             'Destination',
             'Departure',
-            'Total Value',
-            'Received',
-            'Remaining Due',
+            'Total Value (INR)',
+            'Received (INR)',
+            'Remaining Due (INR)',
           ],
           rows: list.map((b) => [
             b.bookingCode,
@@ -642,9 +642,9 @@ export const ReportsView: React.FC = () => {
             'Booking Ref',
             'Due Date',
             'Status',
-            'Total',
-            'Paid',
-            'Pending',
+            'Total (INR)',
+            'Paid (INR)',
+            'Pending (INR)',
           ],
           rows: list.map((e) => [
             e.expenseCode,

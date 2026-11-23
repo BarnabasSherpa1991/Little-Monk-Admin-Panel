@@ -180,10 +180,12 @@ service cloud.firestore {
 
     function isValidPackage(data) {
       return data.keys().hasAll(['packageCode', 'name', 'destination', 'days', 'nights', 'price', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['packageCode', 'name', 'destination', 'days', 'nights', 'description', 'highlights', 'itinerary', 'hotelDetails', 'vehicleDetails', 'inclusions', 'exclusions', 'price', 'childPrice', 'seasonalPrice', 'imageUrl', 'termsAndConditions', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['packageCode', 'name', 'destination', 'targetRegions', 'selectedHotelIds', 'days', 'nights', 'description', 'highlights', 'itinerary', 'hotelDetails', 'vehicleDetails', 'inclusions', 'exclusions', 'price', 'childPrice', 'seasonalPrice', 'imageUrl', 'termsAndConditions', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
         && data.packageCode is string && data.packageCode.size() >= 3 && data.packageCode.size() <= 40
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 150
         && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && isStringList(data, 'targetRegions', 5)
+        && isStringList(data, 'selectedHotelIds', 20)
         && isNonNegNumber(data.days)
         && isNonNegNumber(data.nights)
         && isOptString(data, 'description', 3000)
@@ -242,7 +244,7 @@ service cloud.firestore {
 
     function isValidBooking(data) {
       return data.keys().hasAll(['bookingCode', 'customerName', 'destination', 'startDate', 'endDate', 'adults', 'bookingAmount', 'advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'assignedToUid', 'createdByUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['bookingCode', 'enquiryId', 'quotationId', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'destination', 'startDate', 'endDate', 'adults', 'children', 'infants', 'packageId', 'packageName', 'hotelId', 'hotelName', 'vehicleId', 'vehicleDetails', 'bookingAmount', 'advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'operationsManagerUid', 'operationsManagerName', 'assignedToUid', 'specialNotes', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['bookingCode', 'enquiryId', 'quotationId', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'destination', 'startDate', 'endDate', 'adults', 'children', 'infants', 'packageId', 'packageName', 'hotelId', 'hotelName', 'selectedHotels', 'vehicleId', 'vehicleDetails', 'bookingAmount', 'advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'operationsManagerUid', 'operationsManagerName', 'assignedToUid', 'specialNotes', 'createdByUid', 'createdAt', 'updatedAt'])
         && data.bookingCode is string && data.bookingCode.size() >= 3 && data.bookingCode.size() <= 40
         && isOptString(data, 'enquiryId', 128)
         && isOptString(data, 'quotationId', 128)
@@ -259,7 +261,8 @@ service cloud.firestore {
         && isOptString(data, 'packageId', 128)
         && isOptString(data, 'packageName', 150)
         && isOptString(data, 'hotelId', 128)
-        && isOptString(data, 'hotelName', 150)
+        && isOptString(data, 'hotelName', 500)
+        && isMapList(data, 'selectedHotels', 20)
         && isOptString(data, 'vehicleId', 128)
         && isOptString(data, 'vehicleDetails', 200)
         && isNonNegNumber(data.bookingAmount)
@@ -278,25 +281,47 @@ service cloud.firestore {
 
     function isValidHotel(data) {
       return data.keys().hasAll(['name', 'destination', 'category', 'contractRate', 'createdByUid', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'destination', 'address', 'contactPerson', 'phone', 'email', 'category', 'roomTypes', 'mealPlans', 'contractRate', 'seasonalRate', 'checkInTime', 'checkOutTime', 'policies', 'notes', 'createdByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'country', 'region', 'city', 'destination', 'address', 'contactPerson', 'phone', 'whatsapp', 'email', 'category', 'roomTypes', 'totalRooms', 'mealPlans', 'contractRate', 'seasonalRate', 'peakSeasonRate', 'offSeasonRate', 'checkInTime', 'checkOutTime', 'facilities', 'mapLocationUrl', 'images', 'policies', 'notes', 'availability', 'isActive', 'createdByUid', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 150
+        && (!('country' in data) || data.country in ['India', 'Bhutan'])
+        && (!('region' in data) || data.region in ['Sikkim', 'Darjeeling', 'Bhutan'])
+        && isOptString(data, 'city', 100)
         && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
         && isOptString(data, 'address', 300)
         && isOptString(data, 'contactPerson', 120)
         && isOptString(data, 'phone', 30)
+        && isOptString(data, 'whatsapp', 30)
         && isOptString(data, 'email', 160)
         && data.category in ['Standard', 'Deluxe', 'Premium', 'Luxury']
         && isStringList(data, 'roomTypes', 15)
+        && isOptNumber(data, 'totalRooms')
         && isStringList(data, 'mealPlans', 10)
         && isNonNegNumber(data.contractRate)
         && isOptNumber(data, 'seasonalRate')
+        && isOptNumber(data, 'peakSeasonRate')
+        && isOptNumber(data, 'offSeasonRate')
         && isOptString(data, 'checkInTime', 30)
         && isOptString(data, 'checkOutTime', 30)
+        && isStringList(data, 'facilities', 30)
+        && isOptString(data, 'mapLocationUrl', 500)
+        && isStringList(data, 'images', 10)
         && isOptString(data, 'policies', 2000)
         && isOptString(data, 'notes', 1500)
+        && (!('availability' in data) || data.availability in ['Available', 'Limited', 'Sold Out'])
+        && (!('isActive' in data) || data.isActive is bool)
         && isValidId(data.createdByUid)
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isTargetHotelLocation(data) {
+      return ('region' in data)
+        && ('country' in data)
+        && ('city' in data)
+        && data.region in ['Sikkim', 'Darjeeling', 'Bhutan']
+        && ((data.region == 'Bhutan' && data.country == 'Bhutan')
+          || (data.region in ['Sikkim', 'Darjeeling'] && data.country == 'India'))
+        && data.city is string && data.city.size() >= 1 && data.city.size() <= 100;
     }
 
     function isValidVehicle(data) {
@@ -404,10 +429,12 @@ service cloud.firestore {
 
     function isValidCompanySettings(data) {
       return data.keys().hasAll(['companyName', 'defaultGstPercent', 'updatedAt'])
-        && data.keys().hasOnly(['companyName', 'tagline', 'logoUrl', 'gstNumber', 'defaultGstPercent', 'email', 'phone', 'website', 'address', 'invoicePrefix', 'quotePrefix', 'bookingPrefix', 'bankDetails', 'upiId', 'quotationTerms', 'invoiceTerms', 'whatsappConfig', 'notificationPrefs', 'updatedAt'])
+        && data.keys().hasOnly(['companyName', 'tagline', 'logoUrl', 'currency', 'currencySymbol', 'gstNumber', 'defaultGstPercent', 'email', 'phone', 'website', 'address', 'invoicePrefix', 'quotePrefix', 'bookingPrefix', 'bankDetails', 'upiId', 'quotationTerms', 'invoiceTerms', 'whatsappConfig', 'notificationPrefs', 'updatedAt'])
         && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 150
         && isOptString(data, 'tagline', 200)
         && isOptString(data, 'logoUrl', 500)
+        && (!('currency' in data) || data.currency == 'INR')
+        && (!('currencySymbol' in data) || data.currencySymbol == '₹')
         && isOptString(data, 'gstNumber', 40)
         && isNonNegNumber(data.defaultGstPercent)
         && isOptString(data, 'email', 160)
@@ -603,21 +630,26 @@ service cloud.firestore {
             isActiveEmployee()
             && !(existing().bookingStatus in ['Completed', 'Cancelled'])
             && (existing().assignedToUid == request.auth.uid || existing().createdByUid == request.auth.uid)
-            && incoming().diff(existing()).affectedKeys().hasOnly(['advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'hotelId', 'hotelName', 'vehicleId', 'vehicleDetails', 'specialNotes', 'updatedAt'])
+            && incoming().diff(existing()).affectedKeys().hasOnly(['advanceReceived', 'remainingAmount', 'paymentStatus', 'bookingStatus', 'hotelId', 'hotelName', 'selectedHotels', 'vehicleId', 'vehicleDetails', 'specialNotes', 'updatedAt'])
           )
         );
       allow delete: if isValidId(bookingId) && isAdmin();
     }
 
-    // Hotels
+    // Hotels (strictly restricted to Sikkim, Darjeeling, and Bhutan on create/edit)
     match /hotels/{hotelId} {
       allow get: if isValidId(hotelId) && (isAdmin() || isActiveEmployee());
       allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().category in ['Standard', 'Deluxe', 'Premium', 'Luxury']);
       allow create: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+        && isTargetHotelLocation(incoming())
         && incoming().createdByUid == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
+        && (
+          isTargetHotelLocation(incoming())
+          || (incoming().diff(existing()).affectedKeys().hasOnly(['isActive', 'updatedAt']) && incoming().isActive == false)
+        )
         && incoming().createdByUid == existing().createdByUid
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time;

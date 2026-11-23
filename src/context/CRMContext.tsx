@@ -5,6 +5,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  enableNetwork,
   getDoc,
   onSnapshot,
   query,
@@ -25,6 +26,7 @@ import {
 } from '../firebase';
 import {
   Booking,
+  BookingHotelSelection,
   CompanySettings,
   Customer,
   Employee,
@@ -45,6 +47,7 @@ import {
 } from '../types/crm';
 import { canAccess, getDefaultPermissionsForRole } from '../utils/permissions';
 import { generateCode, todayISO } from '../utils/formatters';
+import { isValidHotelRegion, REGION_COUNTRY_MAP } from '../utils/destinations';
 import { seedInitialCRMData } from '../services/seedData';
 import { ToastContainer, ToastMessage } from '../components/common/ToastContainer';
 
@@ -71,6 +74,7 @@ interface CRMContextValue {
   toggleDarkMode: () => void;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  retryAuthBootstrap: () => Promise<void>;
   can: (mod: ModuleKey, action?: keyof ModulePermission) => boolean;
   toast: (type: ToastMessage['type'], message: string) => void;
 
@@ -105,6 +109,7 @@ interface CRMContextValue {
     packageName?: string;
     hotelId?: string;
     hotelName?: string;
+    selectedHotels?: BookingHotelSelection[];
     vehicleId?: string;
     vehicleDetails?: string;
     bookingAmount: number;
@@ -233,10 +238,30 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Auth & Employee Bootstrapping
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+  const runWithReconnect = useCallback(async <T,>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || '').toLowerCase();
+        const isNetworkErr =
+          err?.code === 'unavailable' ||
+          msg.includes('client is offline') ||
+          msg.includes('unavailable');
+        if (!isNetworkErr || attempt === maxAttempts) {
+          throw err;
+        }
+        await enableNetwork(db).catch(() => undefined);
+        await new Promise((res) => setTimeout(res, 600 * attempt));
+      }
+    }
+    throw lastError;
+  }, []);
+
+  const bootstrapEmployee = useCallback(
+    async (user: User | null) => {
       setAccessDeniedReason(null);
       if (!user) {
         setCurrentEmployee(null);
@@ -244,88 +269,105 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return;
       }
 
+      setAuthLoading(true);
       try {
-        const emailLower = (user.email || '').toLowerCase();
-        const empRef = doc(db, 'employees', user.uid);
-        const empSnap = await getDoc(empRef);
+        await runWithReconnect(async () => {
+          const emailLower = (user.email || '').toLowerCase();
+          const empRef = doc(db, 'employees', user.uid);
+          const empSnap = await getDoc(empRef);
 
-        if (empSnap.exists()) {
-          const empData = { id: empSnap.id, ...empSnap.data() } as Employee;
-          if (empData.status !== 'Active') {
-            setAccessDeniedReason('Your employee account is currently marked Inactive. Contact your Super Admin.');
-            setCurrentEmployee(null);
-          } else {
-            setCurrentEmployee(empData);
-          }
-        } else if (emailLower === BOOTSTRAPPED_SUPER_ADMIN_EMAIL.toLowerCase()) {
-          // Ensure Super Admin employee doc exists first so user can always sign in
-          const settingsSnap = await getDoc(doc(db, 'settings', 'company'));
-          if (!settingsSnap.exists()) {
-            await seedInitialCRMData(
-              user.uid,
-              user.displayName || 'Barnabas Sherpa',
-              user.email || BOOTSTRAPPED_SUPER_ADMIN_EMAIL
-            );
-          } else {
-            await setDoc(empRef, {
-              uid: user.uid,
-              name: user.displayName || 'Barnabas Sherpa',
-              email: user.email || BOOTSTRAPPED_SUPER_ADMIN_EMAIL,
-              phone: '',
-              role: 'Super Admin',
-              department: 'Executive Management',
-              status: 'Active',
-              permissions: getDefaultPermissionsForRole('Super Admin'),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-          }
-          const refreshed = await getDoc(empRef);
-          if (!refreshed.exists()) {
-            throw new Error('Super Admin profile document could not be created.');
-          }
-          setCurrentEmployee({ id: refreshed.id, ...refreshed.data() } as Employee);
-        } else {
-          // Check if invited
-          const inviteRef = doc(db, 'employee_invites', emailLower);
-          const inviteSnap = await getDoc(inviteRef);
-          if (inviteSnap.exists()) {
-            const inv = inviteSnap.data() as EmployeeInvite;
-            await setDoc(empRef, {
-              uid: user.uid,
-              name: inv.name || user.displayName || emailLower,
-              email: emailLower,
-              phone: inv.phone || '',
-              role: inv.role,
-              department: inv.department || 'Sales',
-              status: 'Active',
-              permissions: inv.permissions || getDefaultPermissionsForRole(inv.role),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-            await deleteDoc(inviteRef);
+          if (empSnap.exists()) {
+            const empData = { id: empSnap.id, ...empSnap.data() } as Employee;
+            if (empData.status !== 'Active') {
+              setAccessDeniedReason(
+                'Your employee account is currently marked Inactive. Contact your Super Admin.'
+              );
+              setCurrentEmployee(null);
+            } else {
+              setCurrentEmployee(empData);
+            }
+          } else if (emailLower === BOOTSTRAPPED_SUPER_ADMIN_EMAIL.toLowerCase()) {
+            const settingsSnap = await getDoc(doc(db, 'settings', 'company'));
+            if (!settingsSnap.exists()) {
+              await seedInitialCRMData(
+                user.uid,
+                user.displayName || 'Barnabas Sherpa',
+                user.email || BOOTSTRAPPED_SUPER_ADMIN_EMAIL
+              );
+            } else {
+              await setDoc(empRef, {
+                uid: user.uid,
+                name: user.displayName || 'Barnabas Sherpa',
+                email: user.email || BOOTSTRAPPED_SUPER_ADMIN_EMAIL,
+                phone: '',
+                role: 'Super Admin',
+                department: 'Executive Management',
+                status: 'Active',
+                permissions: getDefaultPermissionsForRole('Super Admin'),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+            }
             const refreshed = await getDoc(empRef);
+            if (!refreshed.exists()) {
+              throw new Error('Super Admin profile document could not be created.');
+            }
             setCurrentEmployee({ id: refreshed.id, ...refreshed.data() } as Employee);
           } else {
-            setAccessDeniedReason(
-              `The Google account ${user.email} has not been invited to Azure Travel CRM yet. Ask your Super Admin (${BOOTSTRAPPED_SUPER_ADMIN_EMAIL}) to send an employee invitation from Team & RBAC.`
-            );
-            setCurrentEmployee(null);
+            const inviteRef = doc(db, 'employee_invites', emailLower);
+            const inviteSnap = await getDoc(inviteRef);
+            if (inviteSnap.exists()) {
+              const inv = inviteSnap.data() as EmployeeInvite;
+              await setDoc(empRef, {
+                uid: user.uid,
+                name: inv.name || user.displayName || emailLower,
+                email: emailLower,
+                phone: inv.phone || '',
+                role: inv.role,
+                department: inv.department || 'Sales',
+                status: 'Active',
+                permissions: inv.permissions || getDefaultPermissionsForRole(inv.role),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+              await deleteDoc(inviteRef);
+              const refreshed = await getDoc(empRef);
+              setCurrentEmployee({ id: refreshed.id, ...refreshed.data() } as Employee);
+            } else {
+              setAccessDeniedReason(
+                `The Google account ${user.email} has not been invited to Azure Travel CRM yet. Ask your Super Admin (${BOOTSTRAPPED_SUPER_ADMIN_EMAIL}) to send an employee invitation from Team & RBAC.`
+              );
+              setCurrentEmployee(null);
+            }
           }
-        }
+        });
       } catch (err: any) {
         console.error('Auth bootstrap error:', err);
         setAccessDeniedReason(
-          `Unable to verify your CRM profile (${err?.code || err?.message || 'database error'}). Please try again or contact support.`
+          `Unable to verify your CRM profile (${err?.code || err?.message || 'database error'}). Please check your connection and try again.`
         );
         setCurrentEmployee(null);
       } finally {
         setAuthLoading(false);
       }
+    },
+    [runWithReconnect]
+  );
+
+  // Auth & Employee Bootstrapping
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setFirebaseUser(user);
+      void bootstrapEmployee(user);
     });
 
     return () => unsub();
-  }, []);
+  }, [bootstrapEmployee]);
+
+  const retryAuthBootstrap = useCallback(async () => {
+    await enableNetwork(db).catch(() => undefined);
+    await bootstrapEmployee(auth.currentUser);
+  }, [bootstrapEmployee]);
 
   // Firestore real-time subscriptions gated on authenticated & active employee
   useEffect(() => {
@@ -727,6 +769,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         packageName?: string;
         hotelId?: string;
         hotelName?: string;
+        selectedHotels?: BookingHotelSelection[];
         vehicleId?: string;
         vehicleDetails?: string;
         bookingAmount: number;
@@ -785,6 +828,13 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const bkRef = doc(collection(db, 'bookings'));
 
         const batch = writeBatch(db);
+        const normalizedHotels = (details.selectedHotels || []).slice(0, 20);
+        const primaryHotelId = details.hotelId || normalizedHotels[0]?.hotelId || '';
+        const combinedHotelName =
+          details.hotelName ||
+          normalizedHotels.map((h) => h.hotelName).filter(Boolean).join(', ') ||
+          '';
+
         batch.set(bkRef, {
           bookingCode,
           enquiryId: enquiry.id,
@@ -801,8 +851,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           infants: enquiry.infants || 0,
           packageId: details.packageId || '',
           packageName: details.packageName || 'Custom Tour Package',
-          hotelId: details.hotelId || '',
-          hotelName: details.hotelName || '',
+          hotelId: primaryHotelId,
+          hotelName: combinedHotelName.slice(0, 500),
+          selectedHotels: normalizedHotels,
           vehicleId: details.vehicleId || '',
           vehicleDetails: details.vehicleDetails || enquiry.preferredVehicle || '',
           bookingAmount: details.bookingAmount,
@@ -875,7 +926,14 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!firebaseUser) throw new Error('Not authenticated');
       try {
         if (id) {
-          const payload = stripUndefined({ ...data, updatedAt: serverTimestamp() });
+          const payload = stripUndefined({
+            ...data,
+            targetRegions: Array.isArray(data.targetRegions) ? data.targetRegions.slice(0, 5) : undefined,
+            selectedHotelIds: Array.isArray(data.selectedHotelIds)
+              ? data.selectedHotelIds.slice(0, 20)
+              : undefined,
+            updatedAt: serverTimestamp(),
+          });
           delete payload.id;
           delete payload.createdAt;
           delete payload.createdByUid;
@@ -888,6 +946,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             packageCode,
             name: (data.name || '').trim(),
             destination: (data.destination || '').trim(),
+            targetRegions: Array.isArray(data.targetRegions) ? data.targetRegions.slice(0, 5) : [],
+            selectedHotelIds: Array.isArray(data.selectedHotelIds) ? data.selectedHotelIds.slice(0, 20) : [],
             days: Number(data.days ?? 5),
             nights: Number(data.nights ?? 4),
             description: data.description || '',
@@ -1011,8 +1071,27 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (data: Partial<Booking>, id?: string) => {
       if (!firebaseUser) throw new Error('Not authenticated');
       try {
+        const normalizedHotels = Array.isArray(data.selectedHotels)
+          ? data.selectedHotels.slice(0, 20)
+          : undefined;
+        const primaryHotelId =
+          data.hotelId ?? (normalizedHotels && normalizedHotels[0]?.hotelId) ?? '';
+        const combinedHotelName =
+          data.hotelName ??
+          (normalizedHotels ? normalizedHotels.map((h) => h.hotelName).filter(Boolean).join(', ') : '');
+
         if (id) {
-          const payload = stripUndefined({ ...data, updatedAt: serverTimestamp() });
+          const payload = stripUndefined({
+            ...data,
+            ...(normalizedHotels !== undefined
+              ? {
+                  selectedHotels: normalizedHotels,
+                  hotelId: primaryHotelId,
+                  hotelName: combinedHotelName.slice(0, 500),
+                }
+              : {}),
+            updatedAt: serverTimestamp(),
+          });
           delete payload.id;
           delete payload.createdAt;
           delete payload.createdByUid;
@@ -1051,8 +1130,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             infants: Number(data.infants ?? 0),
             packageId: data.packageId || '',
             packageName: data.packageName || '',
-            hotelId: data.hotelId || '',
-            hotelName: data.hotelName || '',
+            hotelId: primaryHotelId,
+            hotelName: combinedHotelName.slice(0, 500),
+            selectedHotels: normalizedHotels || [],
             vehicleId: data.vehicleId || '',
             vehicleDetails: data.vehicleDetails || '',
             bookingAmount: amt,
@@ -1101,8 +1181,72 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (data: Partial<Hotel>, id?: string) => {
       if (!firebaseUser) throw new Error('Not authenticated');
       try {
+        // Allow quick deactivation of a legacy non-target hotel without blocking on location
+        const isLegacyDeactivateOnly =
+          Boolean(id) &&
+          Object.keys(data).every((k) => k === 'isActive') &&
+          data.isActive === false;
+
+        if (isLegacyDeactivateOnly && id) {
+          await updateDoc(doc(db, 'hotels', id), {
+            isActive: false,
+            updatedAt: serverTimestamp(),
+          });
+          toast('info', 'Hotel marked inactive.');
+          return id;
+        }
+
+        const region = data.region;
+        if (!isValidHotelRegion(region)) {
+          const msg = 'Hotels must belong to Sikkim, Darjeeling, or Bhutan.';
+          toast('error', msg);
+          throw new Error(msg);
+        }
+        const city = (data.city || '').trim();
+        if (!city) {
+          const msg = 'Please select or enter a valid City / Destination.';
+          toast('error', msg);
+          throw new Error(msg);
+        }
+        const cleanName = (data.name || '').trim();
+        if (!cleanName) {
+          const msg = 'Hotel Name is required.';
+          toast('error', msg);
+          throw new Error(msg);
+        }
+
+        // Prevent duplicate hotel records within the same city & region
+        const duplicate = hotels.find(
+          (h) =>
+            h.id !== id &&
+            h.name.trim().toLowerCase() === cleanName.toLowerCase() &&
+            h.region === region &&
+            (h.city || '').trim().toLowerCase() === city.toLowerCase()
+        );
+        if (duplicate) {
+          const msg = `A hotel named "${cleanName}" already exists in ${city}, ${region}.`;
+          toast('error', msg);
+          throw new Error(msg);
+        }
+
+        const country = REGION_COUNTRY_MAP[region];
+        const destination = `${city}, ${region}`.slice(0, 120);
+
         if (id) {
-          const payload = stripUndefined({ ...data, updatedAt: serverTimestamp() });
+          const payload = stripUndefined({
+            ...data,
+            name: cleanName,
+            country,
+            region,
+            city,
+            destination,
+            totalRooms: data.totalRooms !== undefined ? Number(data.totalRooms) : undefined,
+            contractRate: data.contractRate !== undefined ? Number(data.contractRate) : undefined,
+            seasonalRate: data.seasonalRate !== undefined ? Number(data.seasonalRate) : undefined,
+            peakSeasonRate: data.peakSeasonRate !== undefined ? Number(data.peakSeasonRate) : undefined,
+            offSeasonRate: data.offSeasonRate !== undefined ? Number(data.offSeasonRate) : undefined,
+            updatedAt: serverTimestamp(),
+          });
           delete payload.id;
           delete payload.createdAt;
           delete payload.createdByUid;
@@ -1111,34 +1255,49 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return id;
         } else {
           const payload = stripUndefined({
-            name: (data.name || '').trim(),
-            destination: (data.destination || '').trim(),
-            address: data.address || '',
-            contactPerson: data.contactPerson || '',
-            phone: data.phone || '',
-            email: data.email || '',
+            name: cleanName,
+            country,
+            region,
+            city,
+            destination,
+            address: (data.address || '').trim(),
+            contactPerson: (data.contactPerson || '').trim(),
+            phone: (data.phone || '').trim(),
+            whatsapp: (data.whatsapp || '').trim(),
+            email: (data.email || '').trim(),
             category: data.category || 'Deluxe',
-            roomTypes: data.roomTypes || ['Standard Room'],
-            mealPlans: data.mealPlans || ['CP'],
+            roomTypes: data.roomTypes?.length ? data.roomTypes.slice(0, 15) : ['Deluxe Room'],
+            totalRooms: Number(data.totalRooms ?? 20),
+            mealPlans: data.mealPlans?.length ? data.mealPlans.slice(0, 10) : ['CP'],
             contractRate: Number(data.contractRate ?? 0),
-            seasonalRate: Number(data.seasonalRate ?? 0),
+            seasonalRate: Number(data.seasonalRate ?? data.contractRate ?? 0),
+            peakSeasonRate: Number(data.peakSeasonRate ?? data.seasonalRate ?? data.contractRate ?? 0),
+            offSeasonRate: Number(data.offSeasonRate ?? data.contractRate ?? 0),
             checkInTime: data.checkInTime || '14:00',
             checkOutTime: data.checkOutTime || '11:00',
+            facilities: (data.facilities || []).slice(0, 30),
+            mapLocationUrl: (data.mapLocationUrl || '').trim(),
+            images: (data.images || []).slice(0, 10),
             policies: data.policies || '',
             notes: data.notes || '',
+            availability: data.availability || 'Available',
+            isActive: data.isActive ?? true,
             createdByUid: firebaseUser.uid,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
           const ref = await addDoc(collection(db, 'hotels'), payload);
-          toast('success', `Hotel ${payload.name} added.`);
+          toast('success', `Hotel ${payload.name} (${city}, ${region}) added.`);
           return ref.id;
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.message?.includes('Sikkim') || err?.message?.includes('already exists') || err?.message?.includes('required') || err?.message?.includes('City')) {
+          throw err;
+        }
         handleFirestoreError(err, id ? OperationType.UPDATE : OperationType.CREATE, 'hotels');
       }
     },
-    [firebaseUser, toast]
+    [firebaseUser, hotels, toast]
   );
 
   const deleteHotel = useCallback(
@@ -1533,6 +1692,8 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const payload = stripUndefined({
           ...(settings || {}),
           ...data,
+          currency: 'INR',
+          currencySymbol: '₹',
           companyName: (data.companyName || settings?.companyName || 'Azure Travel').trim(),
           defaultGstPercent: Number(data.defaultGstPercent ?? settings?.defaultGstPercent ?? 5),
           updatedAt: serverTimestamp(),
@@ -1597,6 +1758,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleDarkMode,
       login,
       logout,
+      retryAuthBootstrap,
       can,
       toast,
       enquiries,
@@ -1662,6 +1824,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleDarkMode,
       login,
       logout,
+      retryAuthBootstrap,
       can,
       toast,
       enquiries,

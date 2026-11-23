@@ -330,7 +330,7 @@ export const VehiclesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Per-Day Rate (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Per-Day Rate (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -340,7 +340,7 @@ export const VehiclesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Per-Km Rate (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Per-Km Rate (₹ INR)</label>
                   <input
                     type="number"
                     min={0}

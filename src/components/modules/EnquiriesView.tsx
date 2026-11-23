@@ -15,11 +15,13 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useCRM } from '../../context/CRMContext';
 import {
+  BookingHotelSelection,
   Enquiry,
   EnquiryActivity,
   EnquirySource,
   EnquiryStatus,
   HotelCategory,
+  HotelRegion,
 } from '../../types/crm';
 import {
   buildWhatsAppLink,
@@ -29,6 +31,12 @@ import {
   isOverdueDate,
   todayISO,
 } from '../../utils/formatters';
+import {
+  HOTEL_REGIONS,
+  formatHotelLocation,
+  getDestinationScopedHotels,
+  inferRegionsFromDestination,
+} from '../../utils/destinations';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
@@ -99,6 +107,9 @@ export const EnquiriesView: React.FC = () => {
 
   // Form state
   const [form, setForm] = useState<Partial<Enquiry>>({});
+  const [convertRegionFilter, setConvertRegionFilter] = useState<HotelRegion[]>([]);
+  const [convertSelectedHotels, setConvertSelectedHotels] = useState<BookingHotelSelection[]>([]);
+  const [convertHotelPickerId, setConvertHotelPickerId] = useState('');
   const [convertForm, setConvertForm] = useState({
     packageId: '',
     hotelId: '',
@@ -108,6 +119,17 @@ export const EnquiriesView: React.FC = () => {
     operationsManagerUid: '',
     specialNotes: '',
   });
+
+  const convertScopedHotels = useMemo(
+    () =>
+      getDestinationScopedHotels(
+        hotels,
+        convertTarget?.destination,
+        convertRegionFilter,
+        true
+      ),
+    [hotels, convertTarget?.destination, convertRegionFilter]
+  );
 
   // Subscribe to subcollection activities when detail drawer opens
   useEffect(() => {
@@ -238,6 +260,9 @@ export const EnquiriesView: React.FC = () => {
 
   const openConvertModal = (e: Enquiry) => {
     setConvertTarget(e);
+    setConvertRegionFilter(inferRegionsFromDestination(e.destination));
+    setConvertSelectedHotels([]);
+    setConvertHotelPickerId('');
     setConvertForm({
       packageId: '',
       hotelId: '',
@@ -249,20 +274,51 @@ export const EnquiriesView: React.FC = () => {
     });
   };
 
+  const toggleConvertRegion = (region: HotelRegion) => {
+    setConvertRegionFilter((prev) =>
+      prev.includes(region) ? prev.filter((r) => r !== region) : [...prev, region]
+    );
+  };
+
+  const handleAddConvertHotel = (hotelId: string) => {
+    setConvertHotelPickerId('');
+    if (!hotelId) return;
+    const h = hotels.find((x) => x.id === hotelId);
+    if (!h) return;
+    setConvertSelectedHotels((prev) => {
+      if (prev.some((item) => item.hotelId === h.id)) return prev;
+      return [
+        ...prev,
+        {
+          hotelId: h.id,
+          hotelName: h.name,
+          region: h.region,
+          city: h.city || h.destination,
+        },
+      ];
+    });
+  };
+
   const handleConvertSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!convertTarget) return;
     setSaving(true);
     try {
       const pkg = packages.find((p) => p.id === convertForm.packageId);
-      const hot = hotels.find((h) => h.id === convertForm.hotelId);
+      const primaryHotelId = convertSelectedHotels[0]?.hotelId || convertForm.hotelId || '';
+      const hot = hotels.find((h) => h.id === primaryHotelId);
+      const combinedHotelName =
+        convertSelectedHotels.map((h) => h.hotelName).filter(Boolean).join(', ') ||
+        hot?.name ||
+        '';
       const veh = vehicles.find((v) => v.id === convertForm.vehicleId);
       const ops = employees.find((em) => em.uid === convertForm.operationsManagerUid);
       await convertEnquiryToBooking(convertTarget, {
         packageId: pkg?.id || '',
         packageName: pkg?.name || 'Custom Package',
-        hotelId: hot?.id || '',
-        hotelName: hot?.name || '',
+        hotelId: primaryHotelId,
+        hotelName: combinedHotelName,
+        selectedHotels: convertSelectedHotels,
         vehicleId: veh?.id || '',
         vehicleDetails: veh ? `${veh.model} (${veh.registrationNumber})` : convertTarget.preferredVehicle || '',
         bookingAmount: Number(convertForm.bookingAmount || 0),
@@ -702,7 +758,7 @@ export const EnquiriesView: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-                    Budget (INR)
+                    Budget (₹ INR)
                   </label>
                   <input
                     type="number"
@@ -980,7 +1036,22 @@ export const EnquiriesView: React.FC = () => {
                 <label className="block text-xs font-medium mb-1">Tour Package</label>
                 <select
                   value={convertForm.packageId}
-                  onChange={(e) => setConvertForm({ ...convertForm, packageId: e.target.value })}
+                  onChange={(e) => {
+                    const pkg = packages.find((p) => p.id === e.target.value);
+                    setConvertForm({ ...convertForm, packageId: e.target.value });
+                    if (pkg?.selectedHotelIds && pkg.selectedHotelIds.length > 0 && convertSelectedHotels.length === 0) {
+                      const mapped = pkg.selectedHotelIds
+                        .map((id) => hotels.find((h) => h.id === id))
+                        .filter((h): h is NonNullable<typeof h> => Boolean(h))
+                        .map((h) => ({
+                          hotelId: h.id,
+                          hotelName: h.name,
+                          region: h.region,
+                          city: h.city || h.destination,
+                        }));
+                      if (mapped.length > 0) setConvertSelectedHotels(mapped);
+                    }
+                  }}
                   className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                 >
                   <option value="">Custom Package</option>
@@ -991,39 +1062,84 @@ export const EnquiriesView: React.FC = () => {
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1">Partner Hotel</label>
-                  <select
-                    value={convertForm.hotelId}
-                    onChange={(e) => setConvertForm({ ...convertForm, hotelId: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
-                  >
-                    <option value="">Select Hotel</option>
-                    {hotels.map((h) => (
-                      <option key={h.id} value={h.id}>{h.name}</option>
-                    ))}
-                  </select>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-xs font-semibold text-slate-800 dark:text-slate-100">
+                    Partner Hotels ({convertScopedHotels.isRegionScoped ? convertScopedHotels.activeRegions.join(', ') : 'All Target Regions'})
+                  </label>
+                  <div className="flex items-center gap-1">
+                    {HOTEL_REGIONS.map((reg) => {
+                      const active = convertRegionFilter.includes(reg);
+                      return (
+                        <button
+                          key={reg}
+                          type="button"
+                          onClick={() => toggleConvertRegion(reg)}
+                          className={`px-2 py-0.5 text-[11px] font-medium rounded border cursor-pointer ${
+                            active
+                              ? 'bg-teal-600 text-white border-teal-600'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {reg}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Assigned Vehicle</label>
-                  <select
-                    value={convertForm.vehicleId}
-                    onChange={(e) => setConvertForm({ ...convertForm, vehicleId: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
-                  >
-                    <option value="">Select Vehicle</option>
-                    {vehicles.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.model} ({v.registrationNumber})
-                      </option>
+                <select
+                  value={convertHotelPickerId}
+                  onChange={(e) => handleAddConvertHotel(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                >
+                  <option value="">+ Add Partner Hotel...</option>
+                  {convertScopedHotels.scopedHotels.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name} — {formatHotelLocation(h)} ({h.category})
+                    </option>
+                  ))}
+                </select>
+                {convertSelectedHotels.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {convertSelectedHotels.map((sh, idx) => (
+                      <span
+                        key={`${sh.hotelId || sh.hotelName}-${idx}`}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md"
+                      >
+                        <span className="font-medium">{sh.hotelName}</span>
+                        {sh.city && <span className="text-[11px] text-slate-400">({sh.city})</span>}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConvertSelectedHotels((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                          className="text-slate-400 hover:text-red-600"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
                     ))}
-                  </select>
-                </div>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Assigned Vehicle</label>
+                <select
+                  value={convertForm.vehicleId}
+                  onChange={(e) => setConvertForm({ ...convertForm, vehicleId: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                >
+                  <option value="">Select Vehicle</option>
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.model} ({v.registrationNumber})
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium mb-1">Total Booking Amount (INR) *</label>
+                  <label className="block text-xs font-medium mb-1">Total Booking Amount (₹ INR) *</label>
                   <input
                     required
                     type="number"
@@ -1034,7 +1150,7 @@ export const EnquiriesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Advance Received (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Advance Received (₹ INR)</label>
                   <input
                     type="number"
                     min={0}

@@ -1,8 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { Download, Edit2, Plus, Trash2, Wallet, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
-import { Booking, BookingStatus, Payment } from '../../types/crm';
+import { Booking, BookingHotelSelection, BookingStatus, HotelRegion, Payment } from '../../types/crm';
 import { formatCurrency, formatDate, todayISO } from '../../utils/formatters';
+import {
+  HOTEL_REGIONS,
+  formatHotelLocation,
+  getDestinationScopedHotels,
+  inferRegionsFromDestination,
+} from '../../utils/destinations';
 import { generateBookingVoucherPDF } from '../../utils/pdfAndExport';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -32,6 +38,9 @@ export const BookingsView: React.FC = () => {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [form, setForm] = useState<Partial<Booking>>({});
+  const [hotelRegionFilter, setHotelRegionFilter] = useState<HotelRegion[]>([]);
+  const [selectedHotels, setSelectedHotels] = useState<BookingHotelSelection[]>([]);
+  const [hotelPickerId, setHotelPickerId] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
 
@@ -43,6 +52,11 @@ export const BookingsView: React.FC = () => {
     paymentDate: todayISO(),
     notes: '',
   });
+
+  const scopedHotelsInfo = useMemo(
+    () => getDestinationScopedHotels(hotels, form.destination, hotelRegionFilter, true),
+    [hotels, form.destination, hotelRegionFilter]
+  );
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -63,6 +77,9 @@ export const BookingsView: React.FC = () => {
 
   const openCreate = () => {
     setEditing(null);
+    setHotelRegionFilter([]);
+    setSelectedHotels([]);
+    setHotelPickerId('');
     setForm({
       customerName: '',
       customerPhone: '',
@@ -77,6 +94,7 @@ export const BookingsView: React.FC = () => {
       packageName: '',
       hotelId: '',
       hotelName: '',
+      selectedHotels: [],
       vehicleId: '',
       vehicleDetails: '',
       bookingAmount: 50000,
@@ -89,13 +107,94 @@ export const BookingsView: React.FC = () => {
     setFormOpen(true);
   };
 
+  const openEdit = (b: Booking) => {
+    setEditing(b);
+    setForm({ ...b });
+    const initialRegions = inferRegionsFromDestination(b.destination);
+    setHotelRegionFilter(initialRegions);
+    if (b.selectedHotels && b.selectedHotels.length > 0) {
+      setSelectedHotels(b.selectedHotels);
+    } else if (b.hotelId) {
+      const matched = hotels.find((h) => h.id === b.hotelId);
+      setSelectedHotels(
+        matched
+          ? [
+              {
+                hotelId: matched.id,
+                hotelName: matched.name,
+                region: matched.region,
+                city: matched.city || matched.destination,
+              },
+            ]
+          : b.hotelName
+          ? [{ hotelId: b.hotelId, hotelName: b.hotelName }]
+          : []
+      );
+    } else {
+      setSelectedHotels([]);
+    }
+    setHotelPickerId('');
+    setFormOpen(true);
+  };
+
+  const toggleRegionFilter = (region: HotelRegion) => {
+    setHotelRegionFilter((prev) =>
+      prev.includes(region) ? prev.filter((r) => r !== region) : [...prev, region]
+    );
+  };
+
+  const handleAddHotelToBooking = (hotelId: string) => {
+    setHotelPickerId('');
+    if (!hotelId) return;
+    const h = hotels.find((x) => x.id === hotelId);
+    if (!h) return;
+    setSelectedHotels((prev) => {
+      if (prev.some((item) => item.hotelId === h.id)) return prev;
+      const next = [
+        ...prev,
+        {
+          hotelId: h.id,
+          hotelName: h.name,
+          region: h.region,
+          city: h.city || h.destination,
+        },
+      ];
+      setForm((f) => ({
+        ...f,
+        hotelId: next[0]?.hotelId || '',
+        hotelName: next.map((x) => x.hotelName).join(', '),
+      }));
+      return next;
+    });
+  };
+
+  const handleRemoveHotelFromBooking = (idx: number) => {
+    setSelectedHotels((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      setForm((f) => ({
+        ...f,
+        hotelId: next[0]?.hotelId || '',
+        hotelName: next.map((x) => x.hotelName).join(', '),
+      }));
+      return next;
+    });
+  };
+
   const handleSave = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!form.customerName?.trim() || !form.destination?.trim()) return;
     const pkg = packages.find((p) => p.id === form.packageId);
-    const hot = hotels.find((h) => h.id === form.hotelId);
     const veh = vehicles.find((v) => v.id === form.vehicleId);
     const ops = employees.find((e) => e.uid === form.operationsManagerUid);
+
+    const normalizedHotels = selectedHotels.slice(0, 20);
+    const primaryHotelId = normalizedHotels[0]?.hotelId || form.hotelId || '';
+    const hot = hotels.find((h) => h.id === primaryHotelId);
+    const combinedHotelName =
+      normalizedHotels.map((h) => h.hotelName).filter(Boolean).join(', ') ||
+      hot?.name ||
+      form.hotelName ||
+      '';
 
     const amt = Number(form.bookingAmount ?? 0);
     const adv = Number(form.advanceReceived ?? 0);
@@ -106,7 +205,9 @@ export const BookingsView: React.FC = () => {
       {
         ...form,
         packageName: pkg?.name || form.packageName || '',
-        hotelName: hot?.name || form.hotelName || '',
+        hotelId: primaryHotelId,
+        hotelName: combinedHotelName,
+        selectedHotels: normalizedHotels,
         vehicleDetails: veh ? `${veh.model} (${veh.registrationNumber})` : form.vehicleDetails || '',
         operationsManagerName: ops?.name || form.operationsManagerName || '',
         bookingAmount: amt,
@@ -276,11 +377,7 @@ export const BookingsView: React.FC = () => {
                         {can('bookings', 'edit') && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditing(b);
-                              setForm({ ...b });
-                              setFormOpen(true);
-                            }}
+                            onClick={() => openEdit(b)}
                             className="p-1.5 rounded-md text-slate-500 hover:text-slate-900 dark:hover:text-white"
                             title="Edit Booking"
                           >
@@ -393,25 +490,34 @@ export const BookingsView: React.FC = () => {
                   <label className="block text-xs font-medium mb-1">Package</label>
                   <select
                     value={form.packageId || ''}
-                    onChange={(e) => setForm({ ...form, packageId: e.target.value })}
+                    onChange={(e) => {
+                      const pkg = packages.find((p) => p.id === e.target.value);
+                      const nextDest = !form.destination && pkg ? pkg.destination : form.destination || '';
+                      setForm({
+                        ...form,
+                        packageId: e.target.value,
+                        destination: nextDest,
+                      });
+                      if (pkg?.selectedHotelIds && pkg.selectedHotelIds.length > 0 && selectedHotels.length === 0) {
+                        const mapped = pkg.selectedHotelIds
+                          .map((id) => hotels.find((h) => h.id === id))
+                          .filter((h): h is NonNullable<typeof h> => Boolean(h))
+                          .map((h) => ({
+                            hotelId: h.id,
+                            hotelName: h.name,
+                            region: h.region,
+                            city: h.city || h.destination,
+                          }));
+                        if (mapped.length > 0) {
+                          setSelectedHotels(mapped);
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   >
                     <option value="">Custom Package</option>
                     {packages.map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Hotel</label>
-                  <select
-                    value={form.hotelId || ''}
-                    onChange={(e) => setForm({ ...form, hotelId: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
-                  >
-                    <option value="">Select Hotel</option>
-                    {hotels.map((h) => (
-                      <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
                 </div>
@@ -429,7 +535,7 @@ export const BookingsView: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Booking Amount (INR) *</label>
+                  <label className="block text-xs font-medium mb-1">Booking Amount (₹ INR) *</label>
                   <input
                     required
                     type="number"
@@ -440,7 +546,7 @@ export const BookingsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Advance Received (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Advance Received (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -448,6 +554,95 @@ export const BookingsView: React.FC = () => {
                     onChange={(e) => setForm({ ...form, advanceReceived: Number(e.target.value) })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   />
+                </div>
+                <div className="sm:col-span-2 lg:col-span-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                        Destination Hotels (Sikkim · Darjeeling · Bhutan)
+                      </span>
+                      <span className="ml-2 text-[11px] text-slate-500">
+                        {scopedHotelsInfo.isRegionScoped
+                          ? `Filtered to ${scopedHotelsInfo.activeRegions.join(', ')}`
+                          : 'Showing all active target-region hotels'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {HOTEL_REGIONS.map((reg) => {
+                        const active = hotelRegionFilter.includes(reg);
+                        return (
+                          <button
+                            key={reg}
+                            type="button"
+                            onClick={() => toggleRegionFilter(reg)}
+                            className={`px-2 py-0.5 text-[11px] font-medium rounded border cursor-pointer ${
+                              active
+                                ? 'bg-teal-600 text-white border-teal-600'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {reg}
+                          </button>
+                        );
+                      })}
+                      {hotelRegionFilter.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setHotelRegionFilter([])}
+                          className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline ml-1"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <select
+                    value={hotelPickerId}
+                    onChange={(e) => handleAddHotelToBooking(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                  >
+                    <option value="">+ Add Partner Hotel for this Booking...</option>
+                    {scopedHotelsInfo.scopedHotels.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name} — {formatHotelLocation(h)} ({h.category} · {formatCurrency(h.contractRate)})
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedHotels.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedHotels.map((sh, idx) => (
+                        <span
+                          key={`${sh.hotelId || sh.hotelName}-${idx}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-md"
+                        >
+                          <span className="font-medium text-slate-800 dark:text-slate-100">{sh.hotelName}</span>
+                          {(sh.city || sh.region) && (
+                            <span className="text-[11px] text-slate-400">
+                              ({[sh.city, sh.region].filter(Boolean).join(', ')})
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveHotelFromBooking(idx)}
+                            className="text-slate-400 hover:text-red-600"
+                            title="Remove hotel"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : form.hotelName ? (
+                    <div className="text-xs text-slate-500">
+                      Legacy/Custom hotel reference: <span className="font-medium text-slate-700 dark:text-slate-300">{form.hotelName}</span>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-400">
+                      Select one or more hotels across Sikkim, Darjeeling, or Bhutan for combo or single-destination trips.
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">Booking Status</label>
@@ -515,7 +710,7 @@ export const BookingsView: React.FC = () => {
                 Remaining balance: <strong className="font-mono text-amber-600">{formatCurrency(payTarget.remainingAmount)}</strong>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1">Amount Received (INR) *</label>
+                <label className="block text-xs font-medium mb-1">Amount Received (₹ INR) *</label>
                 <input
                   required
                   type="number"

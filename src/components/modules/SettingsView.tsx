@@ -40,8 +40,10 @@ export const SettingsView: React.FC = () => {
 
   const [form, setForm] = useState<CompanySettings>({
     companyName: 'Azure Travel',
-    tagline: 'Bespoke Domestic & International Journeys',
+    tagline: 'Eastern Himalayas & Bhutan Specialists',
     logoUrl: '/src/assets/images/company_logo_mark_1795419417417.jpg',
+    currency: 'INR',
+    currencySymbol: '₹',
     gstNumber: '',
     defaultGstPercent: 5,
     email: '',
@@ -75,6 +77,8 @@ export const SettingsView: React.FC = () => {
         tagline: settings.tagline || '',
         logoUrl:
           settings.logoUrl || '/src/assets/images/company_logo_mark_1795419417417.jpg',
+        currency: 'INR',
+        currencySymbol: '₹',
         gstNumber: settings.gstNumber || '',
         defaultGstPercent: Number(settings.defaultGstPercent ?? 5),
         email: settings.email || '',
@@ -269,7 +273,16 @@ export const SettingsView: React.FC = () => {
             </h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+            <div className="lg:col-span-1">
+              <label className="block text-xs font-medium mb-1">Default Currency</label>
+              <input
+                readOnly
+                type="text"
+                value="INR (₹) · en-IN"
+                className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900 font-medium text-teal-700 dark:text-teal-400"
+              />
+            </div>
             <div className="lg:col-span-2">
               <label className="block text-xs font-medium mb-1">GSTIN</label>
               <input

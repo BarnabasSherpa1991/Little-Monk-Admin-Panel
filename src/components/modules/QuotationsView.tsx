@@ -12,12 +12,19 @@ import {
 } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
 import {
+  BookingHotelSelection,
+  HotelRegion,
   Quotation,
   QuotationHotelItem,
   QuotationStatus,
   QuotationTransportItem,
 } from '../../types/crm';
 import { buildWhatsAppLink, formatCurrency, formatDate } from '../../utils/formatters';
+import {
+  getDestinationScopedHotels,
+  HOTEL_REGIONS,
+  inferRegionsFromDestination,
+} from '../../utils/destinations';
 import { generateQuotationPDF } from '../../utils/pdfAndExport';
 import { Pagination, SearchInput } from '../common/DataTableToolbar';
 import { ImageWithFallback } from '../common/ImageWithFallback';
@@ -56,6 +63,8 @@ export const QuotationsView: React.FC = () => {
   const [form, setForm] = useState<Partial<Quotation>>({});
   const [hotelItems, setHotelItems] = useState<QuotationHotelItem[]>([]);
   const [transportItems, setTransportItems] = useState<QuotationTransportItem[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<HotelRegion[]>([]);
+  const [rateTier, setRateTier] = useState<'contract' | 'seasonal' | 'peak' | 'offSeason'>('contract');
 
   // Auto-open builder if handed off from Enquiries module
   useEffect(() => {
@@ -86,10 +95,16 @@ export const QuotationsView: React.FC = () => {
       });
       setHotelItems([]);
       setTransportItems([]);
+      setSelectedRegions(inferRegionsFromDestination(draftQuoteEnquiry.destination));
       setBuilderOpen(true);
       setDraftQuoteEnquiry(null);
     }
   }, [draftQuoteEnquiry, setDraftQuoteEnquiry, settings]);
+
+  const hotelScope = useMemo(
+    () => getDestinationScopedHotels(hotels, form.destination, selectedRegions, true),
+    [hotels, form.destination, selectedRegions]
+  );
 
   const totals = useMemo(() => {
     const hotelTotal = hotelItems.reduce((s, h) => s + Number(h.total || 0), 0);
@@ -150,6 +165,7 @@ export const QuotationsView: React.FC = () => {
     });
     setHotelItems([]);
     setTransportItems([]);
+    setSelectedRegions([]);
     setBuilderOpen(true);
   };
 
@@ -163,6 +179,7 @@ export const QuotationsView: React.FC = () => {
     });
     setHotelItems(q.hotelItems || []);
     setTransportItems(q.transportItems || []);
+    setSelectedRegions(inferRegionsFromDestination(q.destination));
     setBuilderOpen(true);
   };
 
@@ -181,16 +198,25 @@ export const QuotationsView: React.FC = () => {
       endDate: e.endDate || '',
       paxSummary: `${e.adults} Adults, ${e.children || 0} Children`,
     }));
+    setSelectedRegions(inferRegionsFromDestination(e.destination));
   };
 
   const addHotelRow = (hotelId?: string) => {
     const h = hotels.find((x) => x.id === hotelId);
-    const rate = h ? h.contractRate : 6500;
+    let rate = 6500;
+    if (h) {
+      if (rateTier === 'seasonal') rate = Number(h.seasonalRate || h.contractRate || 0);
+      else if (rateTier === 'peak') rate = Number(h.peakSeasonRate || h.seasonalRate || h.contractRate || 0);
+      else if (rateTier === 'offSeason') rate = Number(h.offSeasonRate || h.contractRate || 0);
+      else rate = Number(h.contractRate || 0);
+    }
     setHotelItems([
       ...hotelItems,
       {
         hotelId: h?.id || '',
         hotelName: h?.name || 'Custom Hotel',
+        region: h?.region || '',
+        city: h?.city || '',
         roomType: h?.roomTypes?.[0] || 'Deluxe Room',
         mealPlan: h?.mealPlans?.[0] || 'CP',
         nights: 3,
@@ -237,6 +263,12 @@ export const QuotationsView: React.FC = () => {
   };
 
   const convertQuoteToBooking = async (q: Quotation) => {
+    const selectedHotels: BookingHotelSelection[] = (q.hotelItems || []).map((hi) => ({
+      hotelId: hi.hotelId || '',
+      hotelName: hi.hotelName,
+      region: hi.region || '',
+      city: hi.city || '',
+    }));
     await saveBooking({
       enquiryId: q.enquiryId || '',
       quotationId: q.id,
@@ -248,7 +280,9 @@ export const QuotationsView: React.FC = () => {
       startDate: q.startDate || new Date().toISOString().slice(0, 10),
       endDate: q.endDate || new Date().toISOString().slice(0, 10),
       adults: 2,
-      hotelName: q.hotelItems?.[0]?.hotelName || '',
+      hotelId: selectedHotels[0]?.hotelId || '',
+      hotelName: selectedHotels.map((h) => h.hotelName).filter(Boolean).join(', '),
+      selectedHotels,
       vehicleDetails: q.transportItems?.[0]?.vehicleModel || '',
       bookingAmount: q.totalCost,
       advanceReceived: 0,
@@ -567,21 +601,81 @@ export const QuotationsView: React.FC = () => {
               {/* Hotel-wise Pricing */}
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <span className="text-xs font-semibold">Hotel Accommodation Line Items</span>
-                  <div className="flex items-center gap-2">
+                  <div>
+                    <span className="text-xs font-semibold">Hotel Accommodation Line Items</span>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      <span className="text-[11px] text-slate-400">Region Filter:</span>
+                      {HOTEL_REGIONS.map((reg) => {
+                        const active = hotelScope.activeRegions.includes(reg);
+                        return (
+                          <button
+                            key={reg}
+                            type="button"
+                            onClick={() => {
+                              const base = selectedRegions.length > 0 ? selectedRegions : hotelScope.inferredRegions;
+                              const next = base.includes(reg)
+                                ? base.filter((r) => r !== reg)
+                                : [...base, reg];
+                              setSelectedRegions(next);
+                            }}
+                            className={`px-2 py-0.5 text-[11px] rounded border cursor-pointer ${
+                              active
+                                ? 'bg-teal-600 text-white border-teal-600'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {reg}
+                          </button>
+                        );
+                      })}
+                      {selectedRegions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRegions([])}
+                          className="text-[11px] text-slate-400 hover:text-slate-700 underline ml-1 cursor-pointer"
+                        >
+                          Auto
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={rateTier}
+                      onChange={(e) => setRateTier(e.target.value as any)}
+                      className="px-2 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                      title="Rate tier used when adding partner hotel"
+                    >
+                      <option value="contract">Contract Rate</option>
+                      <option value="seasonal">Seasonal Rate</option>
+                      <option value="peak">Peak Season</option>
+                      <option value="offSeason">Off-Season</option>
+                    </select>
                     <select
                       onChange={(e) => {
                         if (e.target.value) addHotelRow(e.target.value);
                         e.target.value = '';
                       }}
-                      className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
+                      className="px-2.5 py-1 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950 max-w-xs"
                     >
-                      <option value="">+ Add from Partner Hotels...</option>
-                      {hotels.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          {h.name} ({h.destination} · {formatCurrency(h.contractRate)}/night)
-                        </option>
-                      ))}
+                      <option value="">
+                        + Add Partner Hotel ({hotelScope.scopedHotels.length} available)...
+                      </option>
+                      {hotelScope.scopedHotels.map((h) => {
+                        const tierVal =
+                          rateTier === 'seasonal'
+                            ? h.seasonalRate || h.contractRate
+                            : rateTier === 'peak'
+                            ? h.peakSeasonRate || h.seasonalRate || h.contractRate
+                            : rateTier === 'offSeason'
+                            ? h.offSeasonRate || h.contractRate
+                            : h.contractRate;
+                        return (
+                          <option key={h.id} value={h.id}>
+                            {h.name} ({h.city || h.destination}, {h.region} · {formatCurrency(tierVal)}/N)
+                          </option>
+                        );
+                      })}
                     </select>
                     <button
                       type="button"
@@ -779,7 +873,7 @@ export const QuotationsView: React.FC = () => {
               {/* Additional Charges, Margin, Discount, GST */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
                 <div>
-                  <label className="block text-xs font-medium mb-1">Sightseeing (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Sightseeing (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -789,7 +883,7 @@ export const QuotationsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Meals (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Meals (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -799,7 +893,7 @@ export const QuotationsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Other (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Other (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -819,7 +913,7 @@ export const QuotationsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Discount (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Discount (₹ INR)</label>
                   <input
                     type="number"
                     min={0}

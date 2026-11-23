@@ -71,6 +71,9 @@ export type EnquirySource =
   | 'Other';
 
 export type HotelCategory = 'Standard' | 'Deluxe' | 'Premium' | 'Luxury';
+export type HotelRegion = 'Sikkim' | 'Darjeeling' | 'Bhutan';
+export type HotelAvailability = 'Available' | 'Limited' | 'Sold Out';
+export type MealPlanCode = 'EP' | 'CP' | 'MAP' | 'AP';
 
 export type EnquiryStatus =
   | 'New Enquiry'
@@ -163,6 +166,8 @@ export interface TourPackage {
   packageCode: string;
   name: string;
   destination: string;
+  targetRegions?: string[];
+  selectedHotelIds?: string[];
   days: number;
   nights: number;
   description?: string;
@@ -186,6 +191,8 @@ export interface TourPackage {
 export interface QuotationHotelItem {
   hotelId?: string;
   hotelName: string;
+  region?: string;
+  city?: string;
   roomType: string;
   mealPlan: string;
   nights: number;
@@ -243,6 +250,13 @@ export interface Quotation {
 export type PaymentStatus = 'Unpaid' | 'Partial' | 'Paid' | 'Refunded';
 export type BookingStatus = 'Pending' | 'Confirmed' | 'In Progress' | 'Completed' | 'Cancelled';
 
+export interface BookingHotelSelection {
+  hotelId?: string;
+  hotelName: string;
+  region?: string;
+  city?: string;
+}
+
 export interface Booking {
   id: string;
   bookingCode: string;
@@ -262,6 +276,7 @@ export interface Booking {
   packageName?: string;
   hotelId?: string;
   hotelName?: string;
+  selectedHotels?: BookingHotelSelection[];
   vehicleId?: string;
   vehicleDetails?: string;
   bookingAmount: number;
@@ -281,20 +296,32 @@ export interface Booking {
 export interface Hotel {
   id: string;
   name: string;
+  country?: 'India' | 'Bhutan';
+  region?: HotelRegion;
+  city?: string;
   destination: string;
   address?: string;
   contactPerson?: string;
   phone?: string;
+  whatsapp?: string;
   email?: string;
   category: HotelCategory;
   roomTypes?: string[];
+  totalRooms?: number;
   mealPlans?: string[];
   contractRate: number;
   seasonalRate?: number;
+  peakSeasonRate?: number;
+  offSeasonRate?: number;
   checkInTime?: string;
   checkOutTime?: string;
+  facilities?: string[];
+  mapLocationUrl?: string;
+  images?: string[];
   policies?: string;
   notes?: string;
+  availability?: HotelAvailability;
+  isActive?: boolean;
   createdByUid: string;
   createdAt?: any;
   updatedAt?: any;
@@ -424,6 +451,8 @@ export interface CompanySettings {
   companyName: string;
   tagline?: string;
   logoUrl?: string;
+  currency?: string;
+  currencySymbol?: string;
   gstNumber?: string;
   defaultGstPercent: number;
   email?: string;

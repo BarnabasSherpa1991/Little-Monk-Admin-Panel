@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, LogOut, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Lock, LogOut, ArrowRight, RefreshCw } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
 import { ImageWithFallback } from '../common/ImageWithFallback';
 
 export const LoginScreen: React.FC = () => {
-  const { firebaseUser, accessDeniedReason, login, logout } = useCRM();
+  const { firebaseUser, accessDeniedReason, login, logout, retryAuthBootstrap } = useCRM();
   const [signingIn, setSigningIn] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   const handleLogin = async () => {
     setSigningIn(true);
@@ -13,6 +14,15 @@ export const LoginScreen: React.FC = () => {
       await login();
     } finally {
       setSigningIn(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    try {
+      await retryAuthBootstrap();
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -48,14 +58,25 @@ export const LoginScreen: React.FC = () => {
                 {accessDeniedReason}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign Out & Switch Account
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <button
+                type="button"
+                disabled={retrying}
+                onClick={handleRetry}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+              >
+                <RefreshCw className={`w-4 h-4 ${retrying ? 'animate-spin' : ''}`} />
+                {retrying ? 'Connecting...' : 'Retry Connection'}
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out & Switch Account
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-5">

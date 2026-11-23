@@ -26,6 +26,7 @@ import {
 import { useCRM } from '../../context/CRMContext';
 import {
   buildWhatsAppLink,
+  formatAxisINR,
   formatCurrency,
   formatDate,
   isOverdueDate,
@@ -242,8 +243,8 @@ export const DashboardView: React.FC = () => {
       {/* Primary Financial & Pipeline KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">Total Revenue</div>
-          <div className="mt-1.5 text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
+          <div className="text-xs text-slate-500 dark:text-slate-400">Total Revenue (INR)</div>
+          <div className="mt-1.5 text-base sm:text-lg xl:text-xl font-bold font-mono tabular-nums break-words text-slate-900 dark:text-slate-100">
             {formatCurrency(stats.totalRevenue)}
           </div>
           <div className="mt-1 text-xs text-teal-600 dark:text-teal-400 tabular-nums">
@@ -253,10 +254,10 @@ export const DashboardView: React.FC = () => {
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-500 dark:text-slate-400">Outstanding Payments</div>
-          <div className="mt-1.5 text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400">
+          <div className="mt-1.5 text-base sm:text-lg xl:text-xl font-bold font-mono tabular-nums break-words text-amber-600 dark:text-amber-400">
             {formatCurrency(stats.outstandingPayments)}
           </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Receivable balance</div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Receivable balance (INR)</div>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
@@ -327,7 +328,7 @@ export const DashboardView: React.FC = () => {
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: axisColor }} />
                 <YAxis
                   tick={{ fontSize: 11, fill: axisColor }}
-                  tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
+                  tickFormatter={formatAxisINR}
                 />
                 <Tooltip
                   contentStyle={tooltipStyle}
@@ -451,7 +452,7 @@ export const DashboardView: React.FC = () => {
                 <XAxis
                   type="number"
                   tick={{ fontSize: 10, fill: axisColor }}
-                  tickFormatter={(v) => `₹${Math.round(v / 1000)}k`}
+                  tickFormatter={formatAxisINR}
                 />
                 <YAxis type="category" dataKey="destination" width={85} tick={{ fontSize: 11, fill: axisColor }} />
                 <Tooltip

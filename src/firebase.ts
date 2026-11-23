@@ -7,14 +7,22 @@ import {
 } from 'firebase/auth';
 import {
   doc,
+  enableNetwork,
   getDocFromServer,
-  getFirestore,
+  initializeFirestore,
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(
+  app,
+  {
+    experimentalForceLongPolling: true,
+    experimentalLongPollingOptions: { timeoutSeconds: 20 },
+  },
+  firebaseConfig.firestoreDatabaseId
+);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
@@ -32,11 +40,22 @@ export async function signOutUser() {
 }
 
 export async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      const isOfflineErr = msg.includes('the client is offline') || msg.includes('unavailable');
+      if (isOfflineErr && attempt === 0) {
+        await enableNetwork(db).catch(() => undefined);
+        await new Promise((res) => setTimeout(res, 1000));
+        continue;
+      }
+      if (msg.includes('the client is offline')) {
+        console.error('Please check your Firebase configuration.');
+      }
+      return;
     }
   }
 }

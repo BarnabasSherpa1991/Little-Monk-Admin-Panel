@@ -1,21 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import { Copy, Edit2, Plus, Power, Trash2, X } from 'lucide-react';
 import { useCRM } from '../../context/CRMContext';
-import { ItineraryDay, TourPackage } from '../../types/crm';
+import { HotelRegion, ItineraryDay, TourPackage } from '../../types/crm';
 import { formatCurrency } from '../../utils/formatters';
+import {
+  formatHotelLocation,
+  getDestinationScopedHotels,
+  HOTEL_REGIONS,
+  inferRegionsFromDestination,
+} from '../../utils/destinations';
 import { SearchInput } from '../common/DataTableToolbar';
 import { ImageWithFallback } from '../common/ImageWithFallback';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 
 const PRESET_IMAGES = [
-  { label: 'Swiss Alps', url: '/src/assets/images/package_swiss_alps_1795419417673.jpg' },
-  { label: 'Kerala Backwaters', url: '/src/assets/images/package_kerala_backwaters_1795419417816.jpg' },
-  { label: 'Kyoto Heritage', url: '/src/assets/images/package_kyoto_heritage_1795419417572.jpg' },
-  { label: 'Rajasthan Palace', url: '/src/assets/images/package_rajasthan_palace_1795419418580.jpg' },
+  { label: 'Himalayan Mountains', url: '/src/assets/images/package_swiss_alps_1795419417673.jpg' },
+  { label: 'Valleys & Lakes', url: '/src/assets/images/package_kerala_backwaters_1795419417816.jpg' },
+  { label: 'Monastery & Heritage', url: '/src/assets/images/package_kyoto_heritage_1795419417572.jpg' },
+  { label: 'Boutique Retreat', url: '/src/assets/images/package_rajasthan_palace_1795419418580.jpg' },
 ];
 
 export const PackagesView: React.FC = () => {
-  const { packages, can, savePackage, deletePackage } = useCRM();
+  const { packages, hotels, can, savePackage, deletePackage } = useCRM();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -44,7 +50,9 @@ export const PackagesView: React.FC = () => {
     setEditing(null);
     setForm({
       name: '',
-      destination: '',
+      destination: 'Sikkim',
+      targetRegions: ['Sikkim'],
+      selectedHotelIds: [],
       days: 5,
       nights: 4,
       description: '',
@@ -66,10 +74,54 @@ export const PackagesView: React.FC = () => {
 
   const openEdit = (p: TourPackage) => {
     setEditing(p);
-    setForm({ ...p });
+    const regions =
+      p.targetRegions && p.targetRegions.length > 0
+        ? p.targetRegions
+        : inferRegionsFromDestination(p.destination);
+    setForm({
+      ...p,
+      targetRegions: regions,
+      selectedHotelIds: p.selectedHotelIds || [],
+    });
     setHighlightsText((p.highlights || []).join('\n'));
     setItinerary(p.itinerary || []);
     setFormOpen(true);
+  };
+
+  const pkgHotelScope = useMemo(
+    () =>
+      getDestinationScopedHotels(
+        hotels,
+        form.destination,
+        (form.targetRegions || []) as HotelRegion[],
+        true
+      ),
+    [hotels, form.destination, form.targetRegions]
+  );
+
+  const toggleRegion = (reg: HotelRegion) => {
+    const current = (form.targetRegions || []) as HotelRegion[];
+    const next = current.includes(reg) ? current.filter((r) => r !== reg) : [...current, reg];
+    setForm((prev) => ({ ...prev, targetRegions: next }));
+  };
+
+  const togglePackageHotel = (hotelId: string) => {
+    const currentIds = form.selectedHotelIds || [];
+    const nextIds = currentIds.includes(hotelId)
+      ? currentIds.filter((x) => x !== hotelId)
+      : [...currentIds, hotelId].slice(0, 20);
+    const names = nextIds
+      .map((id) => {
+        const h = hotels.find((x) => x.id === id);
+        return h ? `${h.name} (${h.city || h.destination})` : '';
+      })
+      .filter(Boolean)
+      .join(' · ');
+    setForm((prev) => ({
+      ...prev,
+      selectedHotelIds: nextIds,
+      hotelDetails: names || prev.hotelDetails,
+    }));
   };
 
   const handleDuplicate = async (p: TourPackage) => {
@@ -313,7 +365,7 @@ export const PackagesView: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Adult Price (INR) *</label>
+                  <label className="block text-xs font-medium mb-1">Adult Price (₹ INR) *</label>
                   <input
                     required
                     type="number"
@@ -324,7 +376,7 @@ export const PackagesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Child Price (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Child Price (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -334,7 +386,7 @@ export const PackagesView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1">Seasonal Price (INR)</label>
+                  <label className="block text-xs font-medium mb-1">Seasonal Price (₹ INR)</label>
                   <input
                     type="number"
                     min={0}
@@ -375,6 +427,66 @@ export const PackagesView: React.FC = () => {
                     onChange={(e) => setHighlightsText(e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-950"
                   />
+                </div>
+                <div className="sm:col-span-2 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/30 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold">
+                      Target Regions & Linked Partner Hotels
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {HOTEL_REGIONS.map((reg) => {
+                        const selected = (form.targetRegions || []).includes(reg);
+                        return (
+                          <button
+                            key={reg}
+                            type="button"
+                            onClick={() => toggleRegion(reg)}
+                            className={`px-2.5 py-1 text-xs rounded-md border cursor-pointer ${
+                              selected
+                                ? 'bg-teal-600 text-white border-teal-600'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                          >
+                            {reg}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {pkgHotelScope.scopedHotels.length === 0 ? (
+                    <div className="text-xs text-slate-500">
+                      No active partner hotels found for selected regions.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-36 overflow-y-auto">
+                      {pkgHotelScope.scopedHotels.map((h) => {
+                        const checked = (form.selectedHotelIds || []).includes(h.id);
+                        return (
+                          <label
+                            key={h.id}
+                            className={`flex items-start gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                              checked
+                                ? 'border-teal-500 bg-teal-50/50 dark:bg-teal-950/30'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => togglePackageHotel(h.id)}
+                              className="mt-0.5 w-3.5 h-3.5 accent-teal-600 rounded"
+                            />
+                            <div className="min-w-0">
+                              <div className="font-medium truncate">{h.name}</div>
+                              <div className="text-[11px] text-slate-500 truncate">
+                                {formatHotelLocation(h)} · {formatCurrency(h.contractRate)}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1">Hotel Details</label>

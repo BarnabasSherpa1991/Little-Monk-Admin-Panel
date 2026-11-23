@@ -3,18 +3,40 @@ export function formatCurrency(amount: number | undefined | null): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(safe);
 }
 
 export function formatCurrencyExact(amount: number | undefined | null): string {
+  return formatCurrency(amount);
+}
+
+export function formatCurrencyWhole(amount: number | undefined | null): string {
   const safe = Number.isFinite(Number(amount)) ? Number(amount) : 0;
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(safe);
+}
+
+export function formatAxisINR(amount: number | undefined | null): string {
+  const safe = Number.isFinite(Number(amount)) ? Number(amount) : 0;
+  const abs = Math.abs(safe);
+  const sign = safe < 0 ? '-' : '';
+  if (abs >= 10000000) {
+    const cr = abs / 10000000;
+    return `${sign}₹${cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(1)}Cr`;
+  }
+  if (abs >= 100000) {
+    const lk = abs / 100000;
+    return `${sign}₹${lk % 1 === 0 ? lk.toFixed(0) : lk.toFixed(1)}L`;
+  }
+  if (abs >= 1000) {
+    return `${sign}₹${Math.round(abs / 1000)}k`;
+  }
+  return `${sign}₹${Math.round(abs)}`;
 }
 
 export function formatDate(dateStr: string | undefined | null): string {
