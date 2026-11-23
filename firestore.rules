@@ -29,7 +29,7 @@ service cloud.firestore {
     }
 
     function isBootstrappedSuperAdmin() {
-      return isSignedIn() && request.auth.token.email == 'barnabassherpa@gmail.com';
+      return isSignedIn() && request.auth.token.email.lower() == 'barnabassherpa@gmail.com';
     }
 
     function employeeDocPath(uid) {
@@ -508,7 +508,12 @@ service cloud.firestore {
             get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.assignedToUid == request.auth.uid
             || get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.createdByUid == request.auth.uid
           )));
-        allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().authorUid == request.auth.uid);
+        allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee()
+          && exists(/databases/$(database)/documents/enquiries/$(enquiryId))
+          && (
+            get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.assignedToUid == request.auth.uid
+            || get(/databases/$(database)/documents/enquiries/$(enquiryId)).data.createdByUid == request.auth.uid
+          ));
         allow create: if isValidId(enquiryId) && isValidId(activityId)
           && (isAdmin() || isActiveEmployee())
           && exists(/databases/$(database)/documents/enquiries/$(enquiryId))
@@ -545,7 +550,7 @@ service cloud.firestore {
     // Tour Packages
     match /packages/{packageId} {
       allow get: if isValidId(packageId) && (isAdmin() || isActiveEmployee());
-      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && (existing().isActive == true || existing().createdByUid == request.auth.uid));
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && (existing().isActive == true || existing().createdByUid == request.auth.uid));
       allow create: if isValidId(packageId) && isManagerOrAdmin() && isValidPackage(incoming())
         && incoming().createdByUid == request.auth.uid
         && incoming().createdAt == request.time
@@ -607,7 +612,7 @@ service cloud.firestore {
     // Hotels
     match /hotels/{hotelId} {
       allow get: if isValidId(hotelId) && (isAdmin() || isActiveEmployee());
-      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().category in ['Standard', 'Deluxe', 'Premium', 'Luxury']);
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().category in ['Standard', 'Deluxe', 'Premium', 'Luxury']);
       allow create: if isValidId(hotelId) && isManagerOrAdmin() && isValidHotel(incoming())
         && incoming().createdByUid == request.auth.uid
         && incoming().createdAt == request.time
@@ -622,7 +627,7 @@ service cloud.firestore {
     // Vehicles
     match /vehicles/{vehicleId} {
       allow get: if isValidId(vehicleId) && (isAdmin() || isActiveEmployee());
-      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().availability in ['Available', 'On Trip', 'Reserved', 'Maintenance']);
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().availability in ['Available', 'On Trip', 'Reserved', 'Maintenance']);
       allow create: if isValidId(vehicleId) && isManagerOrAdmin() && isValidVehicle(incoming())
         && incoming().createdByUid == request.auth.uid
         && incoming().createdAt == request.time
@@ -704,7 +709,7 @@ service cloud.firestore {
     // WhatsApp Templates
     match /whatsapp_templates/{templateId} {
       allow get: if isValidId(templateId) && (isAdmin() || isActiveEmployee());
-      allow list: if isBootstrappedSuperAdmin() || (isActiveEmployee() && existing().category in ['Enquiry Response', 'Follow-up', 'Quotation Sharing', 'Booking Confirmation', 'Payment Reminder', 'Tour Reminder']);
+      allow list: if isBootstrappedSuperAdmin() || isManagerOrAdmin() || (isActiveEmployee() && existing().category in ['Enquiry Response', 'Follow-up', 'Quotation Sharing', 'Booking Confirmation', 'Payment Reminder', 'Tour Reminder']);
       allow create, update: if isValidId(templateId) && isAdmin() && isValidWhatsAppTemplate(incoming())
         && incoming().updatedAt == request.time;
       allow delete: if isValidId(templateId) && isAdmin();

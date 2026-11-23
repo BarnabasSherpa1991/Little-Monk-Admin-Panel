@@ -3,11 +3,13 @@ import { db } from '../firebase';
 import { getDefaultPermissionsForRole } from '../utils/permissions';
 
 export async function seedInitialCRMData(uid: string, userName: string, userEmail: string) {
-  const batch = writeBatch(db);
   const now = serverTimestamp();
 
+  // Phase 0: Commit Super Admin employee record & company settings first so auth always succeeds
+  const coreBatch = writeBatch(db);
+
   // 1. Company Settings
-  batch.set(doc(db, 'settings', 'company'), {
+  coreBatch.set(doc(db, 'settings', 'company'), {
     companyName: 'Azure Travel',
     tagline: 'Bespoke Leisure & Corporate Journeys',
     logoUrl: '/src/assets/images/company_logo_mark_1795419417417.jpg',
@@ -44,7 +46,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
   });
 
   // 2. Super Admin employee record
-  batch.set(doc(db, 'employees', uid), {
+  coreBatch.set(doc(db, 'employees', uid), {
     uid,
     name: userName || 'Barnabas Sherpa',
     email: userEmail,
@@ -56,6 +58,10 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     createdAt: now,
     updatedAt: now,
   });
+
+  await coreBatch.commit();
+
+  const batch = writeBatch(db);
 
   // 3. WhatsApp Templates
   const templates = [
@@ -96,8 +102,8 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
       body: 'Warm greetings from Azure Travel! Your {{destination}} departure ({{startDate}}) is approaching. Please keep your IDs and vouchers handy. Driver details will be shared 24 hours before pickup.',
     },
   ];
-  templates.forEach((t) => {
-    batch.set(doc(db, 'whatsapp_templates', t.id), { ...t, updatedAt: now });
+  templates.forEach(({ id, ...tplData }) => {
+    batch.set(doc(db, 'whatsapp_templates', id), { ...tplData, updatedAt: now });
   });
 
   // 4. Hotels
@@ -574,14 +580,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     updatedAt: now,
   });
 
-  // Activity subcollection for Enquiry 1
-  batch.set(doc(collection(db, 'enquiries', enq1Ref.id, 'activities')), {
-    type: 'Call',
-    content: 'Spoke with Aarav. Confirmed 4 nights at Taj Lake Palace with Lake View room.',
-    authorUid: uid,
-    authorName: userName || 'Barnabas Sherpa',
-    createdAt: now,
-  });
+  // Activity subcollection for Enquiry 1 will be written in batch2 after enq1Ref commits
 
   // 9. Quotations
   const qt1Ref = doc(collection(db, 'quotations'));
@@ -768,61 +767,7 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
     updatedAt: now,
   });
 
-  // 11. Payments
-  const pay1Ref = doc(collection(db, 'payments'));
-  const pay2Ref = doc(collection(db, 'payments'));
-  const pay3Ref = doc(collection(db, 'payments'));
-
-  batch.set(pay1Ref, {
-    receiptCode: 'RCP-2026-001',
-    type: 'Customer Collection',
-    bookingId: bk1Ref.id,
-    bookingCode: 'BK-2026-001',
-    customerId: cust1Ref.id,
-    customerName: 'Aarav & Priya Malhotra',
-    amount: 125000,
-    gstComponent: 5952,
-    mode: 'Bank Transfer',
-    referenceNumber: 'NEFT-884920112',
-    paymentDate: '2026-11-12',
-    notes: 'Booking advance deposit received.',
-    recordedByUid: uid,
-    createdAt: now,
-  });
-
-  batch.set(pay2Ref, {
-    receiptCode: 'RCP-2026-002',
-    type: 'Customer Collection',
-    bookingId: bk2Ref.id,
-    bookingCode: 'BK-2026-002',
-    customerId: cust2Ref.id,
-    customerName: 'Rohan Deshmukh',
-    amount: 112000,
-    gstComponent: 5333,
-    mode: 'UPI',
-    referenceNumber: 'UPI-6642091827',
-    paymentDate: '2026-11-08',
-    notes: 'Full settlement received prior to Kerala departure.',
-    recordedByUid: uid,
-    createdAt: now,
-  });
-
-  batch.set(pay3Ref, {
-    receiptCode: 'RCP-2026-003',
-    type: 'Customer Collection',
-    bookingId: bk3Ref.id,
-    bookingCode: 'BK-2026-003',
-    customerId: cust3Ref.id,
-    customerName: 'Siddharth & Kavya Nair',
-    amount: 150000,
-    gstComponent: 7143,
-    mode: 'Credit/Debit Card',
-    referenceNumber: 'PG-RAZOR-99124',
-    paymentDate: '2026-11-19',
-    notes: 'Initial token deposit for Kyoto hotel lock.',
-    recordedByUid: uid,
-    createdAt: now,
-  });
+  // 11. Payments will be written in batch2 after bk1Ref..bk3Ref commit
 
   // 12. Expenses
   const exp1Ref = doc(collection(db, 'expenses'));
@@ -955,4 +900,71 @@ export async function seedInitialCRMData(uid: string, userName: string, userEmai
   });
 
   await batch.commit();
+
+  // Commit dependent subcollections and booking-linked payments after parent documents exist
+  const batch2 = writeBatch(db);
+  batch2.set(doc(collection(db, 'enquiries', enq1Ref.id, 'activities')), {
+    type: 'Call',
+    content: 'Spoke with Aarav. Confirmed 4 nights at Taj Lake Palace with Lake View room.',
+    authorUid: uid,
+    authorName: userName || 'Barnabas Sherpa',
+    createdAt: now,
+  });
+
+  const pay1Ref = doc(collection(db, 'payments'));
+  const pay2Ref = doc(collection(db, 'payments'));
+  const pay3Ref = doc(collection(db, 'payments'));
+
+  batch2.set(pay1Ref, {
+    receiptCode: 'RCP-2026-001',
+    type: 'Customer Collection',
+    bookingId: bk1Ref.id,
+    bookingCode: 'BK-2026-001',
+    customerId: cust1Ref.id,
+    customerName: 'Aarav & Priya Malhotra',
+    amount: 125000,
+    gstComponent: 5952,
+    mode: 'Bank Transfer',
+    referenceNumber: 'NEFT-884920112',
+    paymentDate: '2026-11-12',
+    notes: 'Booking advance deposit received.',
+    recordedByUid: uid,
+    createdAt: now,
+  });
+
+  batch2.set(pay2Ref, {
+    receiptCode: 'RCP-2026-002',
+    type: 'Customer Collection',
+    bookingId: bk2Ref.id,
+    bookingCode: 'BK-2026-002',
+    customerId: cust2Ref.id,
+    customerName: 'Rohan Deshmukh',
+    amount: 112000,
+    gstComponent: 5333,
+    mode: 'UPI',
+    referenceNumber: 'UPI-6642091827',
+    paymentDate: '2026-11-08',
+    notes: 'Full settlement received prior to Kerala departure.',
+    recordedByUid: uid,
+    createdAt: now,
+  });
+
+  batch2.set(pay3Ref, {
+    receiptCode: 'RCP-2026-003',
+    type: 'Customer Collection',
+    bookingId: bk3Ref.id,
+    bookingCode: 'BK-2026-003',
+    customerId: cust3Ref.id,
+    customerName: 'Siddharth & Kavya Nair',
+    amount: 150000,
+    gstComponent: 7143,
+    mode: 'Credit/Debit Card',
+    referenceNumber: 'PG-RAZOR-99124',
+    paymentDate: '2026-11-19',
+    notes: 'Initial token deposit for Kyoto hotel lock.',
+    recordedByUid: uid,
+    createdAt: now,
+  });
+
+  await batch2.commit();
 }

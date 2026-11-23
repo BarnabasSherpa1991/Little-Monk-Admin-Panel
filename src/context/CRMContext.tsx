@@ -258,7 +258,7 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentEmployee(empData);
           }
         } else if (emailLower === BOOTSTRAPPED_SUPER_ADMIN_EMAIL.toLowerCase()) {
-          // Check if company settings already exist; if not, seed full realistic CRM data!
+          // Ensure Super Admin employee doc exists first so user can always sign in
           const settingsSnap = await getDoc(doc(db, 'settings', 'company'));
           if (!settingsSnap.exists()) {
             await seedInitialCRMData(
@@ -281,6 +281,9 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
           }
           const refreshed = await getDoc(empRef);
+          if (!refreshed.exists()) {
+            throw new Error('Super Admin profile document could not be created.');
+          }
           setCurrentEmployee({ id: refreshed.id, ...refreshed.data() } as Employee);
         } else {
           // Check if invited
@@ -310,9 +313,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setCurrentEmployee(null);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Auth bootstrap error:', err);
-        setAccessDeniedReason('Unable to verify your CRM profile. Please try again or contact support.');
+        setAccessDeniedReason(
+          `Unable to verify your CRM profile (${err?.code || err?.message || 'database error'}). Please try again or contact support.`
+        );
         setCurrentEmployee(null);
       } finally {
         setAuthLoading(false);
@@ -422,14 +427,26 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Hotels
     if (canAccess(currentEmployee, 'hotels', 'view')) {
-      subscribe<Hotel>('hotels', collection(db, 'hotels'), setHotels, (a, b) =>
+      const qHotels = isManagerOrAdmin
+        ? collection(db, 'hotels')
+        : query(
+            collection(db, 'hotels'),
+            where('category', 'in', ['Standard', 'Deluxe', 'Premium', 'Luxury'])
+          );
+      subscribe<Hotel>('hotels', qHotels, setHotels, (a, b) =>
         (a.name || '').localeCompare(b.name || '')
       );
     }
 
     // Vehicles
     if (canAccess(currentEmployee, 'vehicles', 'view')) {
-      subscribe<Vehicle>('vehicles', collection(db, 'vehicles'), setVehicles, byCreatedDesc);
+      const qVehicles = isManagerOrAdmin
+        ? collection(db, 'vehicles')
+        : query(
+            collection(db, 'vehicles'),
+            where('availability', 'in', ['Available', 'On Trip', 'Reserved', 'Maintenance'])
+          );
+      subscribe<Vehicle>('vehicles', qVehicles, setVehicles, byCreatedDesc);
     }
 
     // Payments & Expenses
@@ -474,7 +491,20 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     subscribe<NotificationItem>('notifications', qNotif, setNotifications, byCreatedDesc);
 
     // WhatsApp Templates
-    subscribe<WhatsAppTemplate>('whatsapp_templates', collection(db, 'whatsapp_templates'), setWhatsappTemplates);
+    const qTpl = isManagerOrAdmin
+      ? collection(db, 'whatsapp_templates')
+      : query(
+          collection(db, 'whatsapp_templates'),
+          where('category', 'in', [
+            'Enquiry Response',
+            'Follow-up',
+            'Quotation Sharing',
+            'Booking Confirmation',
+            'Payment Reminder',
+            'Tour Reminder',
+          ])
+        );
+    subscribe<WhatsAppTemplate>('whatsapp_templates', qTpl, setWhatsappTemplates);
 
     // Company Settings
     const uSettings = onSnapshot(
@@ -795,9 +825,11 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           updatedAt: serverTimestamp(),
         });
 
+        await batch.commit();
+
         if (details.advanceReceived > 0) {
           const payRef = doc(collection(db, 'payments'));
-          batch.set(payRef, {
+          await setDoc(payRef, {
             receiptCode: generateCode('RCP', payments.length),
             type: 'Customer Collection',
             bookingId: bkRef.id,
@@ -814,8 +846,6 @@ export const CRMProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             createdAt: serverTimestamp(),
           });
         }
-
-        await batch.commit();
         await createNotificationInternal(
           `Booking Confirmed: ${bookingCode}`,
           `${enquiry.customerName} confirmed ${enquiry.destination} (${bookingCode}).`,
